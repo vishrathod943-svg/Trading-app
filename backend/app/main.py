@@ -3,7 +3,7 @@ import os
 from threading import RLock
 from contextlib import asynccontextmanager
 import secrets
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from .automation import AutoConfig
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
@@ -36,7 +36,7 @@ app=FastAPI(title='F&O Compass',version='0.2.0',lifespan=lifespan,
 
 @app.middleware('http')
 async def authenticate(request,call_next):
-    if API_TOKEN and not secrets.compare_digest(request.headers.get('authorization',''), 'Bearer '+API_TOKEN):
+    if not (request.method=='GET' and request.url.path=='/kite/callback') and API_TOKEN and not secrets.compare_digest(request.headers.get('authorization',''), 'Bearer '+API_TOKEN):
         return JSONResponse(status_code=401,content={'detail':'Backend authentication required'})
     return await call_next(request)
 
@@ -181,3 +181,16 @@ def configure_automation(body:AutoConfig):
 def stop_automation():
     if service: service.auto.pause('Stopped by user; pending orders/positions remain at broker; protective exits continue')
     return automation_status()
+
+@app.get('/kite/callback', include_in_schema=False)
+def kite_callback():
+    # This landing page does not exchange tokens, authorize the phone, or enable orders.
+    # Never echo query parameters; the private CLI performs the authenticated exchange.
+    return PlainTextResponse(
+        'Kite login redirect received. Return to your private server terminal and continue '
+        'scripts/kite-login.py. Copy the request_token from this page address into the hidden '
+        'terminal prompt. Do not share the address or token. This page does not verify a '
+        'broker session or enable trading.',
+        headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
+                 'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",
+                 'X-Content-Type-Options':'nosniff'})

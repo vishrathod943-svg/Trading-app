@@ -8,7 +8,7 @@ services:
       FO_AUTO_DATABASE: /data/automation.db
       FO_API_TOKEN: ${FO_API_TOKEN:?Set a random backend token in the private env file}
       KITE_API_KEY: ${KITE_API_KEY:?Set your Kite API key}
-      KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:?Set your current Kite access token}
+      KITE_ACCESS_TOKEN: ${KITE_ACCESS_TOKEN:-}
       FO_LIVE_ORDERS: ${FO_LIVE_ORDERS:-false}
     volumes:
       - trading-data:/data

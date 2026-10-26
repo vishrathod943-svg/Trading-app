@@ -170,3 +170,16 @@ def test_kite_sdk_host_local_timestamp_is_not_reinterpreted_as_ist():
     assert live.quote_view()['NSE:TEST']['age']<3
     live.on_ticks(None,[dict(instrument_token=1,last_price=90,exchange_timestamp=stamp.replace(microsecond=0))])
     assert live.quote_view()['NSE:TEST']['price']==100
+
+def test_public_callback_does_not_reflect_tokens_or_bypass_api_auth(monkeypatch):
+    from app import main
+    from fastapi.testclient import TestClient
+    monkeypatch.setattr(main,'API_TOKEN','x'*32)
+    with TestClient(main.app) as c:
+        r=c.get('/kite/callback?request_token=private-test-value&status=success')
+        assert r.status_code==200
+        assert 'private-test-value' not in r.text
+        assert r.headers['cache-control']=='no-store'
+        assert r.headers['referrer-policy']=='no-referrer'
+        assert c.get('/broker/status').status_code==401
+        assert c.post('/kite/callback').status_code==401

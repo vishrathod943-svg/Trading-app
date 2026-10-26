@@ -20,6 +20,10 @@ Caddy terminates HTTPS and proxies WebSockets. The broker service is not exposed
 
 In Android Settings enter `https://YOUR_HOST`, the **backend** access token, and enable **Require real Kite data**; save. The phone encrypts this token with Android Keystore. Kite credentials remain on the server. Watch the analysed-symbol count and broker tick age. Warm-up requires one rate-limited historical request per eligible underlying and may take several minutes. Synthetic data is never substituted in this live mode.
 
+## Kite developer redirect URL
+
+Register `https://YOUR_HOST/kite/callback` as the redirect URL in the Kite developer app (for this setup: `https://tradeliveerrrs.duckdns.org/kite/callback`). The callback must be reachable through the deployed HTTPS server before doing the login flow. The initial deployment permits an empty KITE_ACCESS_TOKEN: the API and callback start, while market data remains not-ready and automation stays off. After the helper saves a verified session, restart the backend to load it. The public GET landing page never reflects query values, exchanges credentials or enables trading; complete session exchange in the private terminal helper. Default Docker/helper startup disables HTTP access logging so request-token query strings aren't logged. If using another proxy/server, keep callback query strings out of its access logs too. Merely visiting this page does not prove broker authentication.
+
 ## Daily broker login helper
 
 On your own secure server terminal, install the backend requirements in a virtual environment and run:
