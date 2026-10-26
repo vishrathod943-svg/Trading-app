@@ -22,3 +22,5 @@ BUILDX_CONFIG=/workspace/toolchains/buildx docker build \
 Normal non-proxied servers can omit the optional CA secret. Never use `--trusted-host`, disable TLS or replace expected artifact checksums to make setup pass.
 
 Callback follow-up: the focused public-callback test passes, verifying a non-reflecting, no-store landing page and continued authentication on broker endpoints. Live Compose also validates with an empty access token for initial HTTPS/login bootstrap. Actual hosted redirect and broker session exchange remain unverified.
+
+Editor-free configuration helper: 3 focused tests pass for private file creation, token preservation, input rejection without file overwrite, and symlink rejection. Only synthetic test credentials were used.

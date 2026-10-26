@@ -8,6 +8,16 @@ This release includes a Kite SDK streaming adapter and a guarded option-order pa
 2. An always-on Linux server and hostname pointing to it, with ports 80/443 accessible and Docker Compose installed. Broker orders remain on your account even if the server or phone disconnects.
 3. A securely supplied server API key, access token and independently generated backend access token. Do not send secrets in chat, commit them or embed them in the APK. The backend token must be at least 32 characters. You can generate one locally using `python3 -c 'import secrets; print(secrets.token_urlsafe(48))'` and keep the output private.
 
+## Configure from a phone without an editor
+
+After cloning/updating the repository, run this in your server SSH terminal:
+
+```bash
+python3 scripts/configure-server.py --domain YOUR_HOST
+```
+
+For this deployment use `--domain tradeliveerrrs.duckdns.org`. Paste the Kite API key at the hidden terminal prompt and press Enter; the key will not appear on screen. The helper requires only standard Python, saves `~/fo-private/live.env` with owner-only permissions, preserves existing backend/access tokens, creates a random backend token if absent, and keeps real trading OFF. It never asks for a broker password or prints credentials. Do not share the settings file or a screenshot of its contents. If a text editor is already open, close that SSH browser tab and open a new SSH connection before running the command.
+
 ## Deploy
 
 Copy `deploy/live.env.example` to a private file outside the checkout, set `FO_DOMAIN`, `FO_API_TOKEN`, `KITE_API_KEY` and `KITE_ACCESS_TOKEN`, and keep `FO_LIVE_ORDERS=false` for paper verification. Restrict the file to its owner. From the checkout:
