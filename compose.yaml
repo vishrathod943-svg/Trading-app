@@ -1,0 +1,13 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      FO_MODE: demo
+      FO_DATABASE: /data/screener.db
+    volumes:
+      - paper-data:/data
+    restart: unless-stopped
+volumes:
+  paper-data:

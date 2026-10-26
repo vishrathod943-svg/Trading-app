@@ -1,0 +1,15 @@
+{
+  "min_score": 65,
+  "volume_ratio": 1.5,
+  "bullish_rsi_min": 50,
+  "bullish_rsi_max": 75,
+  "bearish_rsi_min": 25,
+  "bearish_rsi_max": 50,
+  "weights": {
+    "setup": 30,
+    "volume": 20,
+    "moves": 15,
+    "backtest": 20,
+    "fundamentals": 15
+  }
+}
