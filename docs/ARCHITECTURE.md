@@ -55,3 +55,9 @@ The uploaded document is a product specification, not evidence of working servic
 - Instrumented Android UI tests, device and lifecycle tests, accessibility audit, 200-stock/1,000-user load testing, release signing and distribution. Do not interpret backend tests as these checks.
 
 Broker and Firebase credentials should be supplied securely only after selecting integrations. Never commit them or send them through chat. Automatic real-order placement should remain off by default and require explicit trade confirmation if implemented.
+
+## v0.2 Kite extension supersedes the demo-only boundary above
+
+`kite_live.py` supplies a rate-limited startup instrument/history loader, closed-day analysis and authenticated Kite full-mode ticks. `automation.py` keeps an independent SQLite intent ledger, with a broker-account binding, paper/live gates, full-premium capital limits and option entry/protection/exit reconciliation. No broker call is made merely by importing the modules. `FO_MODE=kite` activates the lifespan-managed service; errors expose only sanitized status text, not credentials.
+
+`SecureToken.kt` encrypts the backend bearer token using Android Keystore AES-GCM. `AutomationPanel.kt` shows feed age, scan readiness, paper/live controls and automation order states. Live sockets send coalesced quote events rather than re-running technical scans for every tick. The hosted backend is single-account and single-process. Start instructions, and all remaining deployment/unattended-use limitations, are in `LIVE_SETUP.md`. The previous demo-only list is a record of v0.1; this section and `LIVE_SETUP.md` describe v0.2 behavior. FCM, portfolio-grade reconciliation of external manual trades, full option Greeks/IV, fundamental/event checks and production verification are still outstanding.

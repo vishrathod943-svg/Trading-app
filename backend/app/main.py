@@ -1,6 +1,10 @@
 import asyncio
 import os
 from threading import RLock
+from contextlib import asynccontextmanager
+import secrets
+from fastapi.responses import JSONResponse
+from .automation import AutoConfig
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -11,13 +15,38 @@ from .rules import load_rules
 
 DEFAULT_RULES = load_rules()
 
-if os.getenv('FO_MODE','demo')!='demo':
-    raise RuntimeError('Only demo provider implemented. Live mode requires a licensed broker adapter.')
+MODE=os.getenv('FO_MODE','demo')
+if MODE not in ('demo','kite'): raise RuntimeError('FO_MODE must be demo or kite')
+API_TOKEN=os.getenv('FO_API_TOKEN','')
+if MODE=='kite' and len(API_TOKEN)<32: raise RuntimeError('Kite mode requires a random FO_API_TOKEN of at least 32 characters')
 provider=DemoProvider(); engine=Engine(os.getenv('FO_DATABASE','screener.db'))
-app=FastAPI(title='F&O Compass',version='0.1.0',description='Educational synthetic-data paper screener. No orders or live prices.')
+service=None
+if MODE=='kite':
+    from .kite_live import KiteLive
+    service=KiteLive(DEFAULT_RULES,os.getenv('FO_AUTO_DATABASE','automation.db'))
+
+@asynccontextmanager
+async def lifespan(app):
+    if service: service.start()
+    yield
+    if service: await service.stop()
+
+app=FastAPI(title='F&O Compass',version='0.2.0',lifespan=lifespan,
+    description='Single-account Kite streaming and guarded option automation; demo remains available.')
+
+@app.middleware('http')
+async def authenticate(request,call_next):
+    if API_TOKEN and not secrets.compare_digest(request.headers.get('authorization',''), 'Bearer '+API_TOKEN):
+        return JSONResponse(status_code=401,content={'detail':'Backend authentication required'})
+    return await call_next(request)
+
 cache={}
 analysis_lock=RLock()
 def analyse(symbol):
+    if service:
+        result=service.results.get(symbol)
+        if not result: raise HTTPException(404,'Symbol not analysed yet or history unavailable')
+        return result
     with analysis_lock:
         return _analyse(symbol)
 
@@ -41,15 +70,17 @@ def _analyse(symbol):
     cache[symbol]=result; return result
 
 @app.get('/health')
-def health(): return dict(status='ok',mode='demo',feed_connected=False,push_configured=False,universe='8 synthetic NSE symbols; BSE not connected',time=datetime.now(timezone.utc).isoformat())
+def health(): return dict(status='ok',mode=MODE,feed_connected=bool(service and service.connected),push_configured=False,universe=service.status() if service else '8 synthetic NSE symbols; BSE not connected',time=datetime.now(timezone.utc).isoformat())
 @app.get('/scan')
 def scan(min_score:float=Query(0,ge=0,le=100),exchange:str|None=None,sector:str|None=None,direction:str|None=None):
-    items=[analyse(s) for s,_,_ in UNIVERSE]
+    items=list(service.results.values()) if service else [analyse(s) for s,_,_ in UNIVERSE]
+    quotes=service.quote_view() if service else {}
+    items=[dict(x,**({'price':quotes[x['exchange']+':'+x['symbol']]['price'],'tick_age_ms':round(quotes[x['exchange']+':'+x['symbol']]['age']*1000)} if x['exchange']+':'+x['symbol'] in quotes else {})) for x in items]
     filtered=[x for x in items if x['score']>=min_score and (not exchange or x['exchange']==exchange) and (not sector or x['sector']==sector) and (not direction or x['direction']==direction)]
     confirmed=[x for x in items if x['confirmed']]
     return dict(items=[{k:v for k,v in x.items() if k not in ('candles','major_moves','backtests','indicators')} for x in filtered],
         confirmed_count=len(confirmed),average_score=round(sum(x['score'] for x in confirmed)/len(confirmed),1) if confirmed else 0,
-        advances=sum(x['change_pct']>0 for x in items),declines=sum(x['change_pct']<0 for x in items),mode='demo',updated_at=datetime.now(timezone.utc).isoformat())
+        advances=sum(x['change_pct']>0 for x in items),declines=sum(x['change_pct']<0 for x in items),mode=MODE,updated_at=datetime.now(timezone.utc).isoformat())
 @app.get('/stock/{symbol}')
 def stock(symbol:str): return analyse(symbol.upper())
 @app.get('/alerts')
@@ -88,6 +119,7 @@ def size(body:Size):
     except ValueError as e: raise HTTPException(422,str(e))
 @app.post('/replay/demo')
 def replay_demo():
+    if service: raise HTTPException(409,'Demo replay is unavailable in Kite mode')
     # Explicit isolated sample, never a generated recommendation.
     try: t=engine.create('DEMO','LONG',dict(entry=100,stop=95,target1=107.5,target2=115))
     except ValueError as e: raise HTTPException(409,str(e))
@@ -97,12 +129,19 @@ def replay_demo():
 def rules(): return DEFAULT_RULES
 @app.websocket('/live')
 async def live(ws:WebSocket):
+    if API_TOKEN and not secrets.compare_digest(ws.headers.get('authorization',''),'Bearer '+API_TOKEN):
+        await ws.close(code=1008); return
     await ws.accept()
     try:
         while True:
             snapshot = await asyncio.to_thread(scan, 0)
-            await ws.send_json(dict(type='snapshot',mode='demo',scan=snapshot,trades=engine.trades(),alerts=engine.alerts()))
-            await asyncio.sleep(5)
+            await ws.send_json(dict(type='snapshot',mode=MODE,scan=snapshot,trades=engine.trades(),alerts=engine.alerts(),broker=broker_status(),automation=automation_status()))
+            if service:
+                for _ in range(50):
+                    await asyncio.sleep(.1)
+                    quotes=service.quote_view()
+                    await ws.send_json(dict(type='ticks',mode='kite',quotes={k:{'price':v['price'],'age_ms':round(v['age']*1000),'exchange_time':v['exchange_time']} for k,v in quotes.items()},broker=broker_status()))
+            else: await asyncio.sleep(5)
     except (WebSocketDisconnect,RuntimeError): pass
 
 class ReplayTick(InputModel):
@@ -122,3 +161,23 @@ class ReplayTick(InputModel):
 def replay_tick(trade_id:int,body:ReplayTick):
     try: return engine.tick(trade_id,**body.model_dump())
     except KeyError: raise HTTPException(404,'Trade not found')
+
+@app.get('/broker/status')
+def broker_status():
+    return service.status() if service else dict(mode='demo',ready=False,feed_connected=False,universe_count=8,error='Start server in Kite mode to use live data')
+
+@app.get('/automation')
+def automation_status():
+    return service.auto.status() if service else dict(enabled=False,mode='paper',live_allowed=False,reason='Kite service not configured',orders=[])
+
+@app.post('/automation')
+def configure_automation(body:AutoConfig):
+    if not service: raise HTTPException(409,'Kite service required; synthetic signals cannot trigger automation')
+    try: service.auto.configure(body,service.ready())
+    except ValueError as e: raise HTTPException(409,str(e))
+    return service.auto.status()
+
+@app.post('/automation/stop')
+def stop_automation():
+    if service: service.auto.pause('Stopped by user; pending orders/positions remain at broker; protective exits continue')
+    return automation_status()

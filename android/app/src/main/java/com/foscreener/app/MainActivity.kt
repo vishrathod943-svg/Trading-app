@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,7 +63,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(24.dp)); Text("Know your setup.\nRespect your risk.", fontSize=34.sp, fontWeight=FontWeight.Bold)
                 Spacer(Modifier.height(20.dp)); Text("F&O COMPASS", color=MaterialTheme.colorScheme.primary, letterSpacing=3.sp)
                 Spacer(Modifier.height(24.dp)); Text("Educational tool. Not investment advice. Trading in F&O involves substantial risk, including loss of the entire premium. Alerts can be delayed and actual fills can differ.")
-                Spacer(Modifier.height(16.dp)); Text("This version uses synthetic demo data and paper trades. It does not place orders or send background push notifications.", color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(16.dp)); Text("Demo uses synthetic prices. A Kite backend can supply live quotes. Real orders require server permission and your explicit auto-trading confirmation. Background push is not connected.", color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(32.dp)); Button(onClick={vm.repository.accepted=true;accepted=true},Modifier.fillMaxWidth()) { Text("I understand · Explore demo") }
             }
         }; return
@@ -75,7 +76,7 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.padding(padding).fillMaxSize()) {
             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal=16.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Science,null,Modifier.size(15.dp)); Spacer(Modifier.width(8.dp))
-                Text("DEMO · SYNTHETIC PRICES",fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
+                Text(if(state.scan?.optString("mode")=="kite") "KITE · BROKER DATA" else if(vm.repository.requireLive) "KITE · DISCONNECTED" else "DEMO · SYNTHETIC PRICES",fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
                 Text(if(state.stale) "OFFLINE / STALE" else if(state.connected) "CONNECTED" else "SNAPSHOT",fontSize=9.sp)
             }
             if(state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -102,14 +103,14 @@ class MainActivity : ComponentActivity() {
         item { Row(verticalAlignment=Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Label("Your market workspace"); Text("The opportunity radar",fontSize=26.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=6.dp)) }; Icon(Icons.Outlined.NorthEast,null,tint=MaterialTheme.colorScheme.primary) } }
         item { Card(colors=CardDefaults.cardColors(containerColor=Mint,contentColor=Ink)) { Column(Modifier.padding(22.dp)) { Text("DISCIPLINE BEFORE DIRECTION",fontSize=10.sp,letterSpacing=1.5.sp); Text("A clear plan.\nA defined risk.",fontSize=31.sp,lineHeight=37.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(vertical=14.dp)); Text("Explore setups with context, not promises.",fontSize=13.sp) } } }
         item { Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Metric("Confirmed",scan?.optInt("confirmed_count")?.toString()?:"—",Modifier.weight(1f)); Metric("Average score",scan?.optDouble("average_score")?.let { "%.0f".format(it) }?:"—",Modifier.weight(1f)) } }
-        item { Card { Column(Modifier.padding(18.dp)) { Label("Demo market breadth"); Spacer(Modifier.height(14.dp)); Row { Text("↑ ${scan?.optInt("advances")?:0} advancing",Modifier.weight(1f),color=MaterialTheme.colorScheme.primary); Text("↓ ${scan?.optInt("declines")?:0} declining",color=MaterialTheme.colorScheme.error) }; Text("8 synthetic NSE symbols · BSE unavailable",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=10.dp)) } } }
+        item { Card { Column(Modifier.padding(18.dp)) { Label(if(scan?.optString("mode")=="kite") "Analysed universe breadth · last closed day" else "Demo market breadth"); Spacer(Modifier.height(14.dp)); Row { Text("↑ ${scan?.optInt("advances")?:0} advancing",Modifier.weight(1f),color=MaterialTheme.colorScheme.primary); Text("↓ ${scan?.optInt("declines")?:0} declining",color=MaterialTheme.colorScheme.error) }; Text(if(scan?.optString("mode")=="kite") "${scan.optJSONArray("items")?.length()?:0} analysed Kite symbols" else "8 synthetic NSE symbols · BSE unavailable",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=10.dp)) } } }
         item { Row(verticalAlignment=Alignment.CenterVertically) { Text("On the radar",fontSize=20.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f)); TextButton(onClick=all) { Text("View all →") } } }
         val items=scan?.optJSONArray("items")?.objects()?.sortedByDescending { it.optInt("score") }?.take(3)?:emptyList()
         if(items.isEmpty()) item { Empty("Waiting for the backend","Start the server, then tap Refresh.") }
         items(items) { SetupRow(it,open) }
-        item { OutlinedButton(onClick=replay,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Outlined.PlayArrow,null); Spacer(Modifier.width(8.dp)); Text("Run paper alert replay") } }
-        item { Text("Replay creates an isolated DEMO trade and triggers entry, T1 and T2. No orders are placed.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { Text("Fetched: ${scan?.optString("updated_at")?:"—"}\nPrice dates are shown in each stock; fetching does not make demo data live.",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        if(scan?.optString("mode")!="kite") item { OutlinedButton(onClick=replay,modifier=Modifier.fillMaxWidth()) { Icon(Icons.Outlined.PlayArrow,null); Spacer(Modifier.width(8.dp)); Text("Run paper alert replay") } }
+        if(scan?.optString("mode")!="kite") item { Text("Replay creates an isolated DEMO trade and triggers entry, T1 and T2. No orders are placed.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Text("Fetched: ${scan?.optString("updated_at")?:"—"}\nDaily indicator dates are shown per stock. Live LTP is streamed separately; no fixed update interval is guaranteed.",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 @Composable private fun SetupRow(item:JSONObject,open:(String)->Unit) {
@@ -132,7 +133,7 @@ class MainActivity : ComponentActivity() {
         item { Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("All","LONG","SHORT","WATCH").forEach { FilterChip(selected=direction==it,onClick={direction=it},label={Text(it,fontSize=11.sp)}) } } }
         item { Label("Minimum score: ${threshold.toInt()}"); Slider(threshold,{threshold=it},valueRange=0f..100f,steps=19) }
         item { Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(confirmed,{confirmed=it}); Text("Confirmed only",Modifier.weight(1f)); TextButton(onClick={sort=!sort}) { Text(if(sort) "Score ↓" else "A–Z") } } }
-        item { Label("${rows.size} results · ${if(exchange=="BSE") "BSE provider not connected" else "Synthetic sample universe"}") }
+        item { Label("${rows.size} results · ${if(exchange=="BSE") "BSE provider not connected" else if(s.scan?.optString("mode")=="kite") "Kite scanned universe" else "Synthetic sample universe"}") }
         if(rows.isEmpty()) item { Empty("No matching setups","Try lowering the score or changing filters.") }
         items(rows) { SetupRow(it,open) }
     }
@@ -140,8 +141,8 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Detail(s:CompassState,vm:CompassViewModel) {
     val d=s.detail ?: return
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-        item { Label("${d.optString("exchange")} / ${d.optString("sector")}"); Text(d.money("price"),fontSize=38.sp,fontWeight=FontWeight.Bold); Text("${d.optDouble("change_pct")}% last synthetic session · ${d.optString("data_as_of")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { Card { Column(Modifier.padding(16.dp)) { Label("Daily price & volume · 80 synthetic sessions"); Candles(d.getJSONArray("candles").objects()) } } }
+        item { Label("${d.optString("exchange")} / ${d.optString("sector")}"); Text(d.money("price"),fontSize=38.sp,fontWeight=FontWeight.Bold); Text("${d.optDouble("change_pct")}% last closed session · ${d.optString("data_as_of")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Card { Column(Modifier.padding(16.dp)) { Label("Daily price & volume · 80 closed sessions"); Candles(d.getJSONArray("candles").objects()) } } }
         item { Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Metric("Setup score", "${d.optInt("score")}",Modifier.weight(1f)); Metric("Volume ratio","${d.optDouble("volume_ratio")}×",Modifier.weight(1f)) } }
         item { Text(if(d.optBoolean("confirmed")) "Confirmed ${d.optString("direction")} setup" else "Watchlist · no confirmed trade",fontSize=20.sp,fontWeight=FontWeight.Bold) }
         val indicators=d.getJSONObject("indicators")
@@ -187,6 +188,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 @Composable private fun Settings(vm:CompassViewModel) {
+    val server by vm.state.collectAsStateWithLifecycle()
+    var token by remember { mutableStateOf(vm.repository.apiToken) }
+    var liveMode by remember { mutableStateOf(vm.repository.requireLive) }
     var url by remember { mutableStateOf(vm.repository.baseUrl) }; var capital by remember { mutableStateOf(vm.repository.capital) }; var risk by remember { mutableStateOf(vm.repository.risk) }; var error by remember { mutableStateOf<String?>(null) }; var saved by remember { mutableStateOf(false) }
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item { Text("Set your boundaries",fontSize=26.sp,fontWeight=FontWeight.Bold) }
@@ -194,8 +198,11 @@ class MainActivity : ComponentActivity() {
         item { OutlinedTextField(capital,{capital=it;saved=false},label={Text("Capital (₹)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth(),singleLine=true) }
         item { OutlinedTextField(risk,{risk=it;saved=false},label={Text("Risk per trade (0–2%)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth(),singleLine=true) }
         item { Label("Backend connection"); OutlinedTextField(url,{url=it;saved=false},label={Text("API base URL")},modifier=Modifier.fillMaxWidth(),singleLine=true); Text("Emulator: http://10.0.2.2:8000\nDevice via adb reverse: http://127.0.0.1:8000\nRemote servers require HTTPS.",fontSize=11.sp,modifier=Modifier.padding(top=8.dp)) }
-        item { Button(onClick={ try { require((capital.toDoubleOrNull()?:0.0)>0 && capital.toDouble().isFinite()) { "Enter valid positive capital" }; val r=risk.toDoubleOrNull()?:0.0; require(r>0 && r<=2) { "Risk must be above 0 and no more than 2%" }; vm.repository.baseUrl=url; vm.repository.capital=capital; vm.repository.risk=risk;vm.connect();vm.refresh();error=null;saved=true } catch(e:Exception) {error=e.message} },modifier=Modifier.fillMaxWidth()) { Text("Save preferences") }; error?.let { Text(it,color=MaterialTheme.colorScheme.error) }; if(saved) Text("Preferences saved",color=MaterialTheme.colorScheme.primary) }
-        item { Card { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) { Label("Connection status"); Text("Market data: synthetic demo only"); Text("Broker orders: disabled"); Text("FCM / background alerts: not configured"); Text("Login / cloud sync: not implemented"); Text("Do not enter broker tokens into this app. A server-side licensed adapter and authentication must be configured before live use.",fontSize=12.sp) } } }
+        item { OutlinedTextField(token,{token=it;saved=false},label={Text("Backend access token (not broker token)")},visualTransformation=PasswordVisualTransformation(),singleLine=true,modifier=Modifier.fillMaxWidth()) }
+        item { Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(liveMode,{liveMode=it;saved=false});Text("Require real Kite data · disable demo fallback") } }
+        item { Button(onClick={ try { require((capital.toDoubleOrNull()?:0.0)>0 && capital.toDouble().isFinite()) { "Enter valid positive capital" }; val r=risk.toDoubleOrNull()?:0.0; require(r>0 && r<=2) { "Risk must be above 0 and no more than 2%" }; vm.repository.baseUrl=url; vm.repository.apiToken=token; vm.repository.requireLive=liveMode; vm.repository.capital=capital; vm.repository.risk=risk;vm.resetConnection();error=null;saved=true } catch(e:Exception) {error=e.message} },modifier=Modifier.fillMaxWidth()) { Text("Save preferences") }; error?.let { Text(it,color=MaterialTheme.colorScheme.error) }; if(saved) Text("Preferences saved",color=MaterialTheme.colorScheme.primary) }
+        item { AutomationPanel(vm,server,capital,risk) }
+        item { Text("Kite API credentials stay on your server. The phone stores only its backend access token, encrypted using Android Keystore. A hosted HTTPS backend is required for remote use.",fontSize=12.sp) }
         item { Text("Educational tool. Not investment advice. F&O trading involves substantial risk. Backtests do not guarantee future results.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

@@ -17,7 +17,8 @@ data class CompassState(
     val scan: JSONObject? = null, val detail: JSONObject? = null,
     val trades: List<JSONObject> = emptyList(), val alerts: List<JSONObject> = emptyList(),
     val loading: Boolean = false, val error: String? = null, val stale: Boolean = true,
-    val connected: Boolean = false, val message: String? = null
+    val connected: Boolean = false, val message: String? = null,
+    val broker: JSONObject? = null, val automation: JSONObject? = null
 )
 class CompassViewModel(app: Application) : AndroidViewModel(app) {
     val repository = Repository(app)
@@ -38,7 +39,9 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
             val scan = repository.scan()
             val trades = JSONArray(repository.request("/trades")).objects()
             val alerts = JSONArray(repository.request("/alerts")).objects()
-            update { it.copy(scan = scan, trades = trades, alerts = alerts, stale = false) }
+            val broker = JSONObject(repository.request("/broker/status"))
+            val automation = JSONObject(repository.request("/automation"))
+            update { it.copy(scan = scan, trades = trades, alerts = alerts, stale = scan.optString("mode")=="kite" && !broker.optBoolean("ready"),broker=broker,automation=automation) }
         } catch (e: Exception) {
             val cached = repository.cached()
             update { it.copy(scan = it.scan ?: cached, stale = true, error = e.message ?: "Connection failed") }
@@ -53,7 +56,25 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
                 if (current != generation) return@launch
                 runCatching {
                     val data = JSONObject(text)
-                    update { it.copy(scan = data.getJSONObject("scan"), trades = data.getJSONArray("trades").objects(), alerts = data.getJSONArray("alerts").objects(), stale = false, error = null) }
+                    if (repository.requireLive && data.optString("mode")!="kite") {
+                        update { it.copy(scan=null,detail=null,stale=true,error="Live mode requires a Kite backend") }
+                        return@runCatching
+                    }
+                    if (data.optString("type")=="ticks") {
+                        val quotes=data.getJSONObject("quotes")
+                        val old=mutable.value.scan
+                        val copy=old?.let { JSONObject(it.toString()) }
+                        copy?.optJSONArray("items")?.objects()?.forEach { item ->
+                            quotes.optJSONObject(item.optString("exchange")+":"+item.optString("symbol"))?.let { q -> item.put("price",q.optDouble("price")).put("tick_age_ms",q.optLong("age_ms")) }
+                        }
+                        val d=mutable.value.detail?.let { JSONObject(it.toString()) }
+                        d?.let { quotes.optJSONObject(it.optString("exchange")+":"+it.optString("symbol"))?.let { q -> d.put("price",q.optDouble("price")).put("tick_age_ms",q.optLong("age_ms")) } }
+                        val broker=data.optJSONObject("broker")
+                        update { it.copy(scan=copy,detail=d,broker=broker,stale=broker?.optBoolean("ready")!=true) }
+                    } else {
+                        val broker=data.optJSONObject("broker")
+                        update { it.copy(scan=data.getJSONObject("scan"),trades=data.getJSONArray("trades").objects(),alerts=data.getJSONArray("alerts").objects(),broker=broker,automation=data.optJSONObject("automation"),stale=data.optString("mode")=="kite" && broker?.optBoolean("ready")!=true,error=null) }
+                    }
                 }
             } }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { retry(current) }
@@ -74,9 +95,13 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
         finally { update { it.copy(loading = false) } }
     } }
     fun action(path: String, body: JSONObject? = null, method: String = "POST") { viewModelScope.launch {
-        try { repository.request(path, method, body); update { it.copy(message = "Paper trading updated", error = null) }; refresh() }
+        try { repository.request(path, method, body); update { it.copy(message = "Server settings updated", error = null) }; refresh() }
         catch (e: Exception) { update { it.copy(error = e.message) } }
     } }
+    fun resetConnection() {
+        update { CompassState(loading=true) }
+        connect(); refresh()
+    }
     fun dismissMessage() { update { it.copy(message = null) } }
     override fun onCleared() { generation++; reconnect?.cancel(); socket?.cancel(); super.onCleared() }
 }

@@ -1,8 +1,24 @@
-# F&O Compass
+# F&O Compass · Android + Kite backend
 
-Native Android research and paper-trading app with a Python FastAPI backend, based on the supplied NSE/BSE screener specification. **This is a working demo foundation, not a production trading service.** All market history is deterministic synthetic data. No real orders, live quotes, executable option ideas, or background push delivery are provided.
+Native Kotlin/Jetpack Compose app and Python FastAPI backend for research, paper trading and a guarded Zerodha Kite option-order path. Version 0.2 adds streaming broker prices, authenticated server access, Android Keystore token storage and optional server-side automation. **Live broker connectivity, real order execution and hosted deployment have not been verified. Keep real orders disabled until account/deployment verification is completed.**
 
-## Run the backend
+## Get the APK
+
+The debug APK is in [`apk/FO-Compass-debug.apk`](apk/FO-Compass-debug.apk). It supports Android 8+ and targets Android 15. This is a debug build, not a signed Play Store release.
+
+Demo mode includes eight explicitly synthetic NSE stock snapshots for offline dashboard/chart exploration. Paper replay requires the backend. Live mode never substitutes synthetic data when the **Require real Kite data** setting is enabled.
+
+## Online and automatic trading
+
+Start with the [AWS Lightsail hosting guide](docs/HOSTING.md). Read **[Kite connection, hosting and automation setup](docs/LIVE_SETUP.md)** before configuring real-money orders. The repository contains a Docker/Caddy HTTPS deployment recipe in `deploy/`. A real server, hostname and valid Kite session are still required; the APK is not itself a hosted service.
+
+Live quotes arrive from Kite full-mode WebSocket ticks. The server forwards coalesced current prices to the phone at up to 10 Hz, with broker exchange timestamps and age. It does not promise millisecond quotes or fills. Setup indicators use completed daily candles and startup-loaded histories, while LTP is streamed independently.
+
+The server can monitor and execute without the phone open. Automation starts **OFF** after every server restart. Start with **paper automation** against the real feed. Live orders require a separate server permission (`FO_LIVE_ORDERS=true`), fresh feed/readiness checks and typing `ENABLE LIVE ORDERS` in Android. Credentials remain on the server. The phone holds only an encrypted backend access token.
+
+Option entries are one-lot long CE/PE limit buys, with ATM/liquidity/expiry checks. Full premium must fit the per-trade risk budget; daily committed premium and realized losses are limited. Stop and target levels use option fill prices and configurable premium R:R. Broker-side stop-limit sells, persistent order intents, tag-based recovery, no blind retries, partial-fill cancellation/protection and target modifications of the same exit order are implemented. Gaps, rejections, partial fills, server outages and order limits can prevent protection or fills. This is not exchange-atomic OCO or production-ready unattended trading. **Stop new entries** does not flatten positions or cancel pending buys.
+
+## Local backend
 
 Requires Python 3.12+.
 
@@ -11,59 +27,41 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/requirements.lock
 cd backend
 ../.venv/bin/python -m pytest -q
-../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+../.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --timeout-graceful-shutdown 5
 ```
 
-The tested transitive versions are pinned in `backend/requirements.lock`; `requirements.txt` lists the direct dependencies.
+Or run `./scripts/backend.sh`. Default `FO_MODE=demo` needs no broker credentials. SQLite stores paper trades and events. `.env.example` documents environment variables; it is not automatically loaded. Use exported variables or Uvicorn `--env-file` for local work. `compose.yaml` runs a loopback-only demo server; `deploy/compose.live.yaml` is the separate HTTPS Kite deployment. Do not expose the unauthenticated demo publicly.
 
-Alternatively run `./scripts/backend.sh` from the checkout, or `docker compose up --build` (Docker required). Docker binds only to loopback. Interactive API documentation is available at the server's `/docs` path. SQLite persists paper trades and events; the demo data itself is repeatable. `FO_DATABASE` selects the database file. `.env.example` is a reference; export variables explicitly or use Uvicorn's `--env-file` option.
+## Build Android
 
-## Build and run Android
-
-Open `android/` in Android Studio with JDK 17 or 21, SDK platform 35 and Build Tools 35.0.0. Android 8+ (API 26) is supported.
+Open `android/` in Android Studio with JDK 17/21, SDK 35 and Build Tools 35.0.0:
 
 ```bash
 cd android
-./gradlew assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug lintDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-In this cloud workspace, `python scripts/bootstrap-android-cloud.py` prepares checksum-verified tools and `./scripts/android-build.sh` builds with them. Standard Android Studio builds do not need this cloud helper.
+In this prepared Linux cloud workspace use `python scripts/bootstrap-android-cloud.py`, then `./scripts/android-build.sh lintDebug`. Downloads retain TLS and pinned checksum verification.
 
-The default API is `http://10.0.2.2:8000` for the Android emulator. For a USB-connected device, run `adb reverse tcp:8000 tcp:8000`, then set `http://127.0.0.1:8000` in Settings. Remote servers require HTTPS. Accept the first-launch educational disclaimer. Use **Overview → Run paper alert replay** to generate an isolated DEMO paper trade and see persisted entry/T1/T2 events in Trades and Alerts. Swipe/system back returns from stock details. The refresh button retries failed connections.
+The default emulator URL is `http://10.0.2.2:8000`. For a USB device run `adb reverse tcp:8000 tcp:8000` and set `http://127.0.0.1:8000`. All other destinations require HTTPS. Set the backend token and **Require real Kite data** in Settings for a live server. Dashboard, search/filters, candle-volume chart, technical context, hidden small-sample backtests, paper desk, alert history and execution controls are included. FCM/background push, multi-user login and cloud sync are not implemented.
 
-The app includes five tabs, dark/light themes, score/direction/exchange/search filters, sorting, daily candles with volume, indicators, major moves, holdout statistics, paper trade tracking/cancellation, risk preferences and server configuration. The last successful scan is cached in private app storage and shown with a stale banner if disconnected. Eight explicitly synthetic stock snapshots are bundled so a fresh install can explore the dashboard and charts without a backend. They remain labelled offline/stale. Paper trades and replay require the backend. WebSocket snapshots update while the app process runs; this is **not** Android background alert delivery.
+## Rules and analysis
 
-## Scanner and rules
+`backend/rules.example.json` shows configurable thresholds and weights. Copy it outside tracked source and export `FO_RULES_FILE=/absolute/path/rules.json`, then restart. Weights must sum to 100 and invalid rules fail startup.
 
-`backend/app/analysis.py` implements EMA20/50/200, Wilder RSI and ATR, MACD/signal, previous 20-session breakout bands, volume ratio, major-move detection, setup rules, position sizing and a liquidity-filtered option selection utility. The provider returns no option contracts, so the app shows options as unavailable.
-
-A long requires close > EMA50 > EMA200, a previous-20-session high breakout, volume >1.5× previous 20-session average, RSI 50–75 and positive MACD. Shorts mirror those conditions. Only confirmed setups above the score threshold get a plan. Entry is the signal candle extreme; an EMA20 pullback reference is also displayed. Stops use the tighter of 1.5 ATR and the recent swing distance, with 1.5R/3R targets. Pullback entries need their own confirmation; they are not separate tracked recommendations.
-
-Score weights: setup 30, volume 20, major moves 15, holdout win rate 20, fundamentals 15. Volume scales up to 3×; move score scales up to five detected moves. Missing fundamentals and hidden/insufficient backtest statistics earn zero points rather than fabricated values. This can produce no confirmed setups, which is valid.
-
-To edit rules, copy `backend/rules.example.json` outside versioned source, edit it and export `FO_RULES_FILE=/absolute/path/rules.json` before starting the server. Weights must sum to 100; invalid configuration fails startup. Restart to apply changes. `/rules` exposes the effective configuration. No arbitrary code or expression evaluation is used.
-
-Backtests use a chronological 70/30 split and non-overlapping signals in the final holdout segment. Signals use only candles available then, with fully matured 5/10/20-session close-to-close outcomes and a 25 bps round-trip cost assumption. Statistics with fewer than 20 samples are hidden. Average drawdown is average adverse closing excursion, not portfolio maximum drawdown. These are underlying-return tests, not option-premium or stop/target execution backtests. There is no tuned training phase, walk-forward validation or sector-wide backtest yet.
+A long requires price > EMA50 > EMA200, a prior-20-session high breakout, volume >1.5× prior average, RSI 50–75 and positive MACD; shorts mirror it. Weight defaults are setup 30, volume 20, major moves 15, holdout win rate 20 and fundamentals 15. Missing fundamentals and insufficient sample statistics earn zero. Backtests use non-overlapping 5/10/20-session underlying close returns in a chronological 30% holdout, with 25 bps assumed round-trip costs; samples under 20 are hidden. These are not option backtests or guarantees of performance. The automated option-premium target R:R is separate from the underlying research plan.
 
 ## API
 
-- `GET /health`: explicit feed/push/demo status
-- `GET /scan?min_score=0&exchange=NSE&sector=Banking&direction=LONG`
-- `GET /stock/INFY`: candles, analysis, plans and sample counts
-- `GET /rules`, `GET /trades`, `GET /alerts`
-- `POST /position-size`: capital, risk_pct (max 2), entry, stop, lot_size
-- `POST /trades`: confirmed symbol, capital, risk_pct; server derives the plan and quantity
-- `DELETE /trades/{id}`: cancel tracking
-- `POST /replay/demo`: deterministic sample lifecycle, never a trade recommendation
-- `POST /replay/{id}/tick`: replay price, volume_confirmed, candle_close, optional high/low
-- `WS /live`: scan, trades and alert snapshots every five seconds
+Kite mode requires an `Authorization: Bearer <FO_API_TOKEN>` header for HTTP and WebSocket connections. Demo can optionally require it too.
 
-See [architecture and remaining production work](docs/ARCHITECTURE.md). Do not expose this unauthenticated demo server publicly. Production requires authenticated per-user access, isolation and a licensed market-data source. No credentials are needed to run the demo; do not put broker tokens into Android settings.
+- `GET /health`, `/broker/status`, `/scan`, `/stock/{symbol}`, `/rules`
+- `GET /automation`, `POST /automation`, `POST /automation/stop`
+- `GET /trades`, `/alerts`; `POST /trades`; `DELETE /trades/{id}` (paper desk)
+- `POST /position-size`, `/replay/demo`, `/replay/{id}/tick` (demo paper replay)
+- `WS /live`: snapshots plus separate price/timestamp tick messages in Kite mode
 
-Educational tool. Not investment advice. Trading in F&O involves substantial risk. Alerts may be delayed and gaps can exceed planned loss.
+See [implementation boundaries](docs/ARCHITECTURE.md), [online deployment](docs/LIVE_SETUP.md) and [validation](docs/VALIDATION.md). GitHub CI builds/lints Android, runs backend tests and uploads a debug APK artifact. Hosted CI is not claimed until its actual results are checked.
 
-## Validation
-
-See [verified checks and limits](docs/VALIDATION.md). A GitHub Actions workflow is included for backend tests and Android build/lint; it has not been run on GitHub from this workspace. The APK is debug-signed, not a Play Store release.
+Educational tool. Not investment advice. F&O can lose the full premium. Alerts and orders may be delayed; realized fills and risk may differ from plans.

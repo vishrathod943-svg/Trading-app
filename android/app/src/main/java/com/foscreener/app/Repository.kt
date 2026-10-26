@@ -14,7 +14,18 @@ import okhttp3.RequestBody.Companion.toRequestBody
 
 class Repository(private val context: Context) {
     private val prefs = context.getSharedPreferences("compass", Context.MODE_PRIVATE)
-    private val cache = java.io.File(context.filesDir, "scan-cache.json")
+    private val secureToken = SecureToken(context)
+    var apiToken: String
+        get() = secureToken.read()
+        set(value) { secureToken.write(value.trim()) }
+    var requireLive: Boolean
+        get() = prefs.getBoolean("require_live", false)
+        set(value) { prefs.edit { putBoolean("require_live",value) } }
+    private val cache get() = java.io.File(context.filesDir, "scan-${baseUrl.hashCode()}-$requireLive.json")
+    private fun builder(url: String): Request.Builder = Request.Builder().url(url).apply {
+        val token = apiToken
+        if (token.isNotBlank()) header("Authorization","Bearer $token")
+    }
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(45, TimeUnit.SECONDS).build()
     var baseUrl: String
         get() = prefs.getString("url", "http://10.0.2.2:8000")!!
@@ -35,7 +46,7 @@ class Repository(private val context: Context) {
         set(value) { prefs.edit { putBoolean("accepted", value) } }
 
     suspend fun request(path: String, method: String = "GET", body: JSONObject? = null): String = withContext(Dispatchers.IO) {
-        val builder = Request.Builder().url(baseUrl + path)
+        val builder = builder(baseUrl + path)
         if (method == "POST") builder.post((body?.toString() ?: "{}").toRequestBody("application/json".toMediaType()))
         if (method == "DELETE") builder.delete()
         client.newCall(builder.build()).execute().use { response ->
@@ -46,19 +57,22 @@ class Repository(private val context: Context) {
     }
     suspend fun scan(): JSONObject {
         val text = request("/scan")
+        if (requireLive && JSONObject(text).optString("mode") != "kite") throw IOException("This backend is in demo mode. Live mode never falls back to synthetic prices.")
         withContext(Dispatchers.IO) { cache.writeText(text) }
         return JSONObject(text)
     }
     suspend fun cached(): JSONObject? = withContext(Dispatchers.IO) {
         runCatching { JSONObject(cache.readText()) }.getOrElse {
+            if (requireLive) return@withContext null
             runCatching { context.assets.open("scan.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
         }
     }
     suspend fun bundledDetail(symbol: String): JSONObject? = withContext(Dispatchers.IO) {
+        if (requireLive) return@withContext null
         if (!symbol.matches(Regex("[A-Z0-9]+"))) return@withContext null
         runCatching { context.assets.open("stocks/$symbol.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
     }
-    fun live(listener: WebSocketListener): WebSocket = client.newWebSocket(Request.Builder().url(baseUrl.replaceFirst("http", "ws") + "/live").build(), listener)
+    fun live(listener: WebSocketListener): WebSocket = client.newWebSocket(builder(baseUrl.replaceFirst("http", "ws") + "/live").build(), listener)
 }
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
 fun JSONObject.money(key: String): String = if (isNull(key)) "—" else "₹%,.2f".format(optDouble(key))
