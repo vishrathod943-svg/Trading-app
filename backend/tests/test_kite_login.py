@@ -31,3 +31,22 @@ def test_rejects_wrong_urls_without_reflecting_secrets(url):
 def test_errors_never_echo_exception_contents(error):
     message=login.failure_message(error)
     assert 'sensitive' not in message and 'preserved' in message
+
+def test_checksum_reason_is_sanitized():
+    message=login.failure_message(TokenException('Invalid checksum: sensitive'))
+    assert 'checksum' in message and 'SAME developer app' in message
+    assert 'sensitive' not in message
+
+@pytest.mark.parametrize('stage',['exchange','profile'])
+def test_identifies_failed_authentication_stage_without_leaking(stage):
+    class Client:
+        def generate_session(self,token,api_secret):
+            if stage=='exchange': raise TokenException('sensitive')
+            return {'access_token':'synthetic-test-token'}
+        def set_access_token(self,token): pass
+        def profile(self): raise TokenException('sensitive')
+    with pytest.raises(SystemExit) as error:
+        login.exchange_and_verify(Client(),'synthetic-request','synthetic-secret')
+    message=str(error.value)
+    assert ('TOKEN EXCHANGE FAILED' if stage=='exchange' else 'ACCOUNT CHECK FAILED') in message
+    assert 'sensitive' not in message and 'synthetic-test-token' not in message

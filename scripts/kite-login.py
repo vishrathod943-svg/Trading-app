@@ -39,7 +39,9 @@ def extract_request_token(value, domain):
 
 def failure_message(error):
     # Deliberately never include exception text: broker/network errors can contain secrets.
-    if isinstance(error,kite_errors.TokenException):
+    if isinstance(error,(kite_errors.TokenException,kite_errors.InputException)) and 'checksum' in str(error).lower():
+        reason='Kite rejected the login checksum. Re-copy the API secret from the SAME developer app as your saved API key, and use a new login from this helper.'
+    elif isinstance(error,kite_errors.TokenException):
         reason='Broker rejected authentication. Use a fresh, unused request token and the secret matching this API key.'
     elif isinstance(error,kite_errors.PermissionException):
         reason='Broker denied API permission. Check the app/account permissions and required broker IP settings.'
@@ -56,9 +58,23 @@ def failure_message(error):
     return reason+suffix+' Existing configuration was preserved.'
 
 
+def exchange_and_verify(client,request_token,api_secret):
+    try:
+        session=client.generate_session(request_token,api_secret=api_secret)
+    except Exception as error:
+        raise SystemExit('TOKEN EXCHANGE FAILED: '+failure_message(error)) from None
+    try:
+        client.set_access_token(session['access_token'])
+        client.profile()
+    except Exception as error:
+        raise SystemExit('ACCOUNT CHECK FAILED after token exchange: '+failure_message(error)) from None
+    return session
+
+
 def main():
     parser=argparse.ArgumentParser(description='Create a daily Kite session in a private external env file')
     parser.add_argument('--env-file',required=True)
+    parser.add_argument('--prompt-secret',action='store_true',help='Prompt for a fresh secret instead of using a saved shell environment value')
     args=parser.parse_args()
     path=Path(args.env_file).resolve()
     if path.is_relative_to(Path(__file__).resolve().parents[1]):
@@ -67,7 +83,7 @@ def main():
         parser.error('Use an existing private env file with owner-only permissions (chmod 600)')
     values=dotenv_values(path)
     api_key=(values.get('KITE_API_KEY') or getpass.getpass('Kite API key: ')).strip()
-    api_secret=(os.getenv('KITE_API_SECRET') or getpass.getpass('Kite API secret (not saved): ')).strip()
+    api_secret=((None if args.prompt_secret else os.getenv('KITE_API_SECRET')) or getpass.getpass('Kite API secret from the same developer app (not saved): ')).strip()
     client=KiteConnect(api_key=api_key,timeout=15)
     print('Open this login URL in your own browser; keep this terminal private:')
     print(client.login_url())
@@ -76,12 +92,9 @@ def main():
         request_token=extract_request_token(getpass.getpass('Final redirect URL or request token (hidden): '),values.get('FO_DOMAIN'))
     except ValueError as error:
         raise SystemExit(str(error)) from None
-    try:
-        session=client.generate_session(request_token,api_secret=api_secret)
-        client.set_access_token(session['access_token'])
-        client.profile()
-    except Exception as error:
-        raise SystemExit(failure_message(error)) from None
+    if request_token in (api_key,api_secret):
+        raise SystemExit('The request token matches your API key/secret. Use the final redirect URL from a fresh browser login. Settings preserved.')
+    session=exchange_and_verify(client,request_token,api_secret)
     set_key(str(path),'KITE_API_KEY',api_key)
     set_key(str(path),'KITE_ACCESS_TOKEN',session['access_token'])
     path.chmod(0o600)
