@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity() {
     val d=s.detail ?: return
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
         item { Label("${d.optString("exchange")} / ${d.optString("sector")}"); Text(d.money("price"),fontSize=38.sp,fontWeight=FontWeight.Bold); Text("${d.decimal("change_pct")}% last closed session · ${d.optString("data_as_of")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { Card { Column(Modifier.padding(16.dp)) { Label("Daily price & volume · 80 closed sessions"); Candles(d.getJSONArray("candles").objects()) } } }
+        item { Card { Column(Modifier.padding(16.dp)) { Label("Daily price & volume · 80 closed sessions"); Candles(d.getJSONArray("candles").objects(),d.optJSONObject("ict")); Text("ICT: completed daily bars only. FVG / OB candidates shaded; equilibrium in gold. Not intraday signals.",fontSize=11.sp); d.optJSONObject("ict")?.optJSONArray("events")?.objects()?.takeLast(5)?.forEach { Text("${it.optString("time")} · ${it.optString("kind")} · ${it.optString("direction")}",fontSize=11.sp) } } } }
         item { Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Metric("Setup score", "${d.optInt("score")}",Modifier.weight(1f)); Metric("Volume ratio","${d.decimal("volume_ratio")}×",Modifier.weight(1f)) } }
         item { Text(if(d.optBoolean("confirmed")) "Confirmed ${d.optString("direction")} setup" else "Watchlist · no confirmed trade",fontSize=20.sp,fontWeight=FontWeight.Bold) }
         val indicators=d.getJSONObject("indicators")
@@ -159,12 +159,17 @@ class MainActivity : ComponentActivity() {
         item { Card { Column(Modifier.padding(16.dp)) { Label("Options & fundamentals"); Text("Not supplied by this research view",fontSize=20.sp,modifier=Modifier.padding(vertical=8.dp)); Text("Connect a licensed broker adapter before selecting strikes, expiries or premiums. No option recommendation is fabricated.",fontSize=12.sp) } } }
     }
 }
-@Composable private fun Candles(candles:List<JSONObject>) {
+@Composable private fun Candles(candles:List<JSONObject>,ict:JSONObject?=null) {
     Canvas(Modifier.fillMaxWidth().height(220.dp).padding(top=18.dp)) {
         if(candles.isEmpty()) return@Canvas
         val high=candles.maxOf { it.getDouble("high") }; val low=candles.minOf { it.getDouble("low") }; val range=(high-low).coerceAtLeast(.01)
         val step=size.width/candles.size; val priceHeight=size.height*.76f
         fun y(p:Double)=((high-p)/range*priceHeight).toFloat()
+        ict?.optJSONArray("zones")?.objects()?.filter { it.isNull("filled_at") }?.forEach { z ->
+            val left=(z.optInt("start")+.5f)*step
+            drawRect((if(z.optString("direction")=="bullish") Color(0xFF83C963) else Rose).copy(alpha=.16f),Offset(left,y(z.getDouble("high"))),androidx.compose.ui.geometry.Size((size.width-left).coerceAtLeast(0f),(y(z.getDouble("low"))-y(z.getDouble("high"))).coerceAtLeast(0f)))
+        }
+        ict?.optJSONObject("dealing_range")?.let { r -> drawLine(Color(0xFFDDB966),Offset(0f,y(r.getDouble("equilibrium"))),Offset(size.width,y(r.getDouble("equilibrium"))),1f) }
         val maxV=candles.maxOf { it.getDouble("volume") }
         repeat(4) { n -> val gy=priceHeight*n/3; drawLine(Color.Gray.copy(alpha=.15f),Offset(0f,gy),Offset(size.width,gy)) }
         candles.forEachIndexed { n,c ->

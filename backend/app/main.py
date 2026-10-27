@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .analysis import DEFAULT_RULES, indicators, direction_for, major_moves, backtest, trade_plan, position_size
 from .provider import DemoProvider, USDemoProvider, UNIVERSE, US_UNIVERSE
 from .us_market import build_analysis, futures_risk
+from .ict import analyse_ict
 from .engine import Engine
 from .rules import load_rules
 
@@ -110,6 +111,7 @@ def stock(symbol:str):
         if q:
             result.update(data_type=q.get('data_type','live'),bid=q.get('bid'),ask=q.get('ask'),tick_age_ms=round(q['age']*1000),price_as_of=q.get('exchange_time'),timestamp_basis=q.get('timestamp_basis','exchange'))
             if q['price'] is not None: result.update(price=q['price'],price_source=q.get('price_source','last'))
+    result['ict']=analyse_ict(result.get('candles',[]))
     return result
 @app.get('/alerts')
 def alerts(): return engine.alerts()
