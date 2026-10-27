@@ -21,7 +21,10 @@ class Repository(private val context: Context) {
     var requireLive: Boolean
         get() = prefs.getBoolean("require_live", false)
         set(value) { prefs.edit { putBoolean("require_live",value) } }
-    private val cache get() = java.io.File(context.filesDir, "scan-${baseUrl.hashCode()}-$requireLive.json")
+    var demoMarket: String
+        get() = prefs.getString("demo_market","US")!!
+        set(value) { require(value in listOf("US","India")); prefs.edit { putString("demo_market",value) } }
+    private val cache get() = java.io.File(context.filesDir, "scan-${baseUrl.hashCode()}-$requireLive-$demoMarket.json")
     private fun builder(url: String): Request.Builder = Request.Builder().url(url).apply {
         val token = apiToken
         if (token.isNotBlank()) header("Authorization","Bearer $token")
@@ -57,22 +60,28 @@ class Repository(private val context: Context) {
     }
     suspend fun scan(): JSONObject {
         val text = request("/scan")
-        if (requireLive && JSONObject(text).optString("mode") != "kite") throw IOException("This backend is in demo mode. Live mode never falls back to synthetic prices.")
+        if (requireLive && JSONObject(text).optString("mode") !in listOf("kite","ibkr")) throw IOException("A live broker backend is required. Demo data cannot satisfy this setting.")
+        if (!requireLive && JSONObject(text).optString("mode")=="demo" && demoMarket=="US") throw IOException("This backend serves India demo data. Select India demo or use the US backend.")
         withContext(Dispatchers.IO) { cache.writeText(text) }
         return JSONObject(text)
     }
     suspend fun cached(): JSONObject? = withContext(Dispatchers.IO) {
         runCatching { JSONObject(cache.readText()) }.getOrElse {
             if (requireLive) return@withContext null
-            runCatching { context.assets.open("scan.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
+            runCatching { context.assets.open(if(demoMarket=="US") "scan-us.json" else "scan.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
         }
     }
     suspend fun bundledDetail(symbol: String): JSONObject? = withContext(Dispatchers.IO) {
         if (requireLive) return@withContext null
         if (!symbol.matches(Regex("[A-Z0-9]+"))) return@withContext null
-        runCatching { context.assets.open("stocks/$symbol.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
+        runCatching { context.assets.open(if(demoMarket=="US") "stocks-us/$symbol.json" else "stocks/$symbol.json").bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
     }
     fun live(listener: WebSocketListener): WebSocket = client.newWebSocket(builder(baseUrl.replaceFirst("http", "ws") + "/live").build(), listener)
 }
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { getJSONObject(it) }
-fun JSONObject.money(key: String): String = if (isNull(key)) "—" else "₹%,.2f".format(optDouble(key))
+fun JSONObject.money(key: String, fallbackCurrency: String = "INR"): String {
+    if (isNull(key) || !optDouble(key).isFinite()) return "—"
+    val sign = if (optString("currency",fallbackCurrency)=="USD") "\$" else "₹"
+    return "%s%,.2f".format(java.util.Locale.US,sign,optDouble(key))
+}
+fun JSONObject.decimal(key: String, digits: Int = 2): String = if (isNull(key) || !optDouble(key).isFinite()) "—" else ("%."+digits+"f").format(java.util.Locale.US,optDouble(key))

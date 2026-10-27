@@ -15,25 +15,28 @@ class Engine:
         columns={row[1] for row in self.db.execute('PRAGMA table_info(trades)')}
         for column in ('fill_entry','exit_price'):
             if column not in columns: self.db.execute(f'ALTER TABLE trades ADD COLUMN {column} REAL')
+        for column,sql in [('currency',"TEXT NOT NULL DEFAULT 'INR'"),('multiplier','REAL NOT NULL DEFAULT 1')]:
+            if column not in columns:self.db.execute(f'ALTER TABLE trades ADD COLUMN {column} {sql}')
         self.db.commit()
     def trades(self):
         with self.lock:
             rows=[dict(r) for r in self.db.execute('SELECT * FROM trades ORDER BY id DESC')]
             for t in rows:
-                t['pnl']=round(((t['exit_price'] if t['exit_price'] is not None else t['last_price'])-t['fill_entry'])*(1 if t['direction']=='LONG' else -1)*t['quantity'],2) if t['fill_entry'] is not None else None
+                t['pnl']=round(((t['exit_price'] if t['exit_price'] is not None else t['last_price'])-t['fill_entry'])*(1 if t['direction']=='LONG' else -1)*t['quantity']*t['multiplier'],2) if t['fill_entry'] is not None else None
                 t['pnl_kind']='realized' if t['exit_price'] is not None else 'unrealized' if t['fill_entry'] is not None else 'not entered'
             return rows
     def alerts(self):
-        with self.lock: return [dict(r) for r in self.db.execute('SELECT events.*,trades.symbol FROM events JOIN trades ON trades.id=events.trade_id ORDER BY events.id DESC LIMIT 200')]
+        with self.lock: return [dict(r) for r in self.db.execute('SELECT events.*,trades.symbol,trades.currency FROM events JOIN trades ON trades.id=events.trade_id ORDER BY events.id DESC LIMIT 200')]
     def event(self,t,event,price,message):
         self.db.execute('INSERT OR IGNORE INTO events(trade_id,event,price,time,message) VALUES(?,?,?,?,?)',(t['id'],event,price,datetime.now(timezone.utc).isoformat(),message))
-    def create(self,symbol,direction,plan,quantity=1):
+    def create(self,symbol,direction,plan,quantity=1,currency='INR',multiplier=1):
         with self.lock, self.db:
             active=[t for t in self.trades() if t['state'] in ('WAITING_ENTRY','ENTRY_TRIGGERED','T1_HIT')]
             if len(active)>=5: raise ValueError('Maximum 5 active paper trades')
             if any(t['symbol']==symbol for t in active): raise ValueError('Symbol already tracked')
             cursor=self.db.execute('INSERT INTO trades(symbol,direction,state,entry,stop,target1,target2,quantity,last_price,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
                 (symbol,direction,'WAITING_ENTRY',plan['entry'],plan['stop'],plan['target1'],plan['target2'],quantity,plan['entry'],datetime.now(timezone.utc).isoformat()))
+            self.db.execute('UPDATE trades SET currency=?,multiplier=? WHERE id=?',(currency,multiplier,cursor.lastrowid))
             t=next(t for t in self.trades() if t['id']==cursor.lastrowid)
             self.event(t,'NEW_SETUP',t['entry'],'Paper setup tracked; replay data only')
             return t

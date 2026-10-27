@@ -1,4 +1,8 @@
-# F&O Compass · Android + Kite backend
+# Compass v0.3 · US stocks and index-futures research
+
+**US setup starts here: [US_START_HERE.md](docs/US_START_HERE.md).** Version 0.3 adds a read-only IBKR research adapter, USD contract metadata, futures multiplier-aware risk calculations, a 12-instrument synthetic US demo, and an iPhone browser dashboard at `/app`. It does not submit IBKR orders. A separately installed/logged-in official TWS or IB Gateway and market-data entitlements are required for live data. No new AWS server has been provisioned; don't reuse the deleted server's old IP. See the [handoff checklist](docs/US_READY_CHECKLIST.md) and [synthetic mobile browser preview](docs/images/us-research-mobile.png).
+
+The sections below also document the retained India/Kite workflow.
 
 Native Kotlin/Jetpack Compose app and Python FastAPI backend for research, paper trading and a guarded Zerodha Kite option-order path. Version 0.2 adds streaming broker prices, authenticated server access, Android Keystore token storage and optional server-side automation. **Live broker connectivity, real order execution and hosted deployment have not been verified. Keep real orders disabled until account/deployment verification is completed.**
 

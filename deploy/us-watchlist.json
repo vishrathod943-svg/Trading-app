@@ -1,0 +1,74 @@
+[
+  {
+    "symbol": "AAPL",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Technology"
+  },
+  {
+    "symbol": "MSFT",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Technology"
+  },
+  {
+    "symbol": "NVDA",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Technology"
+  },
+  {
+    "symbol": "TSLA",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Consumer"
+  },
+  {
+    "symbol": "AMZN",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Consumer"
+  },
+  {
+    "symbol": "META",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "Technology"
+  },
+  {
+    "symbol": "SPY",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "ETF"
+  },
+  {
+    "symbol": "QQQ",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "ETF"
+  },
+  {
+    "symbol": "MES",
+    "security_type": "FUT",
+    "exchange": "CME",
+    "sector": "Equity index futures"
+  },
+  {
+    "symbol": "MNQ",
+    "security_type": "FUT",
+    "exchange": "CME",
+    "sector": "Equity index futures"
+  },
+  {
+    "symbol": "ES",
+    "security_type": "FUT",
+    "exchange": "CME",
+    "sector": "Equity index futures"
+  },
+  {
+    "symbol": "NQ",
+    "security_type": "FUT",
+    "exchange": "CME",
+    "sector": "Equity index futures"
+  }
+]

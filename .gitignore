@@ -9,3 +9,13 @@ local.properties
 .idea/
 *.iml
 artifacts/
+
+# Private deployment/broker settings and signing keys
+*.env
+.env.*
+!*.env.example
+!.env.example
+*.pem
+*.key
+*.jks
+*.keystore

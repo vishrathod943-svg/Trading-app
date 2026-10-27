@@ -1,3 +1,15 @@
+# v0.3 US research validation
+
+- Backend: **62 tests passed**, one Starlette/AnyIO dependency deprecation warning. Includes prior India behavior plus US contract qualification, ambiguity/expiry rejection, read-only lifecycle, delayed/frozen/unknown/stale quote handling, absent-price handling, sanitized broker errors, private US configuration, futures tick alignment and multiplier-aware risk/P&L, protected APIs and browser WebSocket authentication. Early sandbox-restricted runs were interrupted and are not counted as passes; the completed run used the socket permissions required by async tests.
+- Android: **0.3.0 / version code 3**, API 26 minimum / API 35 target, debug signature verified, **BUILD SUCCESSFUL** with lint **0 errors / 3 warnings**. Confirmed the packaged APK contains 12 US synthetic scan records and all 12 detail assets. No Android emulator/physical device test was run.
+- Browser: actual Chromium run at a 390×844 viewport passed authenticated connection, 12-instrument rendering, four-future filtering, MES details, USD/multiplier-aware risk calculation, search, empty URL query (no token in URL), and zero JavaScript page errors. Screenshot in `docs/images/us-research-mobile.png` is synthetic data. This validates responsive Chromium, not actual iOS Safari hardware.
+- Static/configuration: JavaScript syntax, shell bootstrap syntax and Docker Compose US configuration validated. Private configuration and gateway doctor CLI help run. The Ubuntu provisioning/bootstrap was not executed on a new AWS instance.
+- Container: backend image built with TLS verification enabled (optional public CA-bundle BuildKit secret in this proxied cloud). `us_demo` passed authentication, public dashboard route, 12-instrument scan, MES metadata, futures risk estimate, USD synthetic replay and WebSocket checks. `ibkr` without a gateway remained not-ready with no synthetic fallback, exposed read-only status, and rejected automation even with `FO_LIVE_ORDERS=true` in the container environment. Both test containers were removed after testing.
+- Gateway/account/market data: **not verified**. No official IB Gateway/TWS was installed or logged in here, no IBKR credentials were supplied, and no live/delayed broker feed was received. Mocked quotes are never described as actual broker validation. Real and broker-paper IBKR order submission are not implemented.
+- Hosting: no replacement AWS instance, static IP, DNS change, TLS certificate or billing action was performed. Credit eligibility remains a user/account check. Old deleted-server IP/DNS must not be reused without correct reconfiguration. Cloud publication/restoration into a new task and GitHub-hosted CI outcomes are not claimed.
+
+The sections below retain earlier-release evidence for the India/Kite workflow.
+
 # v0.2 validation in this cloud workspace
 
 - Backend: `cd backend && ../.venv/bin/python -m pytest -q` — **31 passed**, one Starlette/AnyIO dependency deprecation warning.

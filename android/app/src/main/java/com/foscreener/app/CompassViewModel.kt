@@ -41,7 +41,7 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
             val alerts = JSONArray(repository.request("/alerts")).objects()
             val broker = JSONObject(repository.request("/broker/status"))
             val automation = JSONObject(repository.request("/automation"))
-            update { it.copy(scan = scan, trades = trades, alerts = alerts, stale = scan.optString("mode")=="kite" && !broker.optBoolean("ready"),broker=broker,automation=automation) }
+            update { it.copy(scan = scan, trades = trades, alerts = alerts, stale = scan.optString("mode") in listOf("kite","ibkr") && !broker.optBoolean("ready"),broker=broker,automation=automation) }
         } catch (e: Exception) {
             val cached = repository.cached()
             update { it.copy(scan = it.scan ?: cached, stale = true, error = e.message ?: "Connection failed") }
@@ -56,8 +56,8 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
                 if (current != generation) return@launch
                 runCatching {
                     val data = JSONObject(text)
-                    if (repository.requireLive && data.optString("mode")!="kite") {
-                        update { it.copy(scan=null,detail=null,stale=true,error="Live mode requires a Kite backend") }
+                    if (repository.requireLive && data.optString("mode") !in listOf("kite","ibkr")) {
+                        update { it.copy(scan=null,detail=null,stale=true,error="Live mode requires a broker backend") }
                         return@runCatching
                     }
                     if (data.optString("type")=="ticks") {
@@ -65,15 +65,15 @@ class CompassViewModel(app: Application) : AndroidViewModel(app) {
                         val old=mutable.value.scan
                         val copy=old?.let { JSONObject(it.toString()) }
                         copy?.optJSONArray("items")?.objects()?.forEach { item ->
-                            quotes.optJSONObject(item.optString("exchange")+":"+item.optString("symbol"))?.let { q -> item.put("price",q.optDouble("price")).put("tick_age_ms",q.optLong("age_ms")) }
+                            quotes.optJSONObject(item.optString("exchange")+":"+item.optString("symbol"))?.let { q -> if(!q.isNull("price")) item.put("price",q.optDouble("price")); item.put("tick_age_ms",q.optLong("age_ms")).put("data_type",q.optString("data_type","live")).put("bid",q.opt("bid")).put("ask",q.opt("ask")) }
                         }
                         val d=mutable.value.detail?.let { JSONObject(it.toString()) }
-                        d?.let { quotes.optJSONObject(it.optString("exchange")+":"+it.optString("symbol"))?.let { q -> d.put("price",q.optDouble("price")).put("tick_age_ms",q.optLong("age_ms")) } }
+                        d?.let { quotes.optJSONObject(it.optString("exchange")+":"+it.optString("symbol"))?.let { q -> if(!q.isNull("price")) d.put("price",q.optDouble("price")); d.put("tick_age_ms",q.optLong("age_ms")).put("data_type",q.optString("data_type","live")).put("bid",q.opt("bid")).put("ask",q.opt("ask")) } }
                         val broker=data.optJSONObject("broker")
                         update { it.copy(scan=copy,detail=d,broker=broker,stale=broker?.optBoolean("ready")!=true) }
                     } else {
                         val broker=data.optJSONObject("broker")
-                        update { it.copy(scan=data.getJSONObject("scan"),trades=data.getJSONArray("trades").objects(),alerts=data.getJSONArray("alerts").objects(),broker=broker,automation=data.optJSONObject("automation"),stale=data.optString("mode")=="kite" && broker?.optBoolean("ready")!=true,error=null) }
+                        update { it.copy(scan=data.getJSONObject("scan"),trades=data.getJSONArray("trades").objects(),alerts=data.getJSONArray("alerts").objects(),broker=broker,automation=data.optJSONObject("automation"),stale=data.optString("mode") in listOf("kite","ibkr") && broker?.optBoolean("ready")!=true,error=null) }
                     }
                 }
             } }

@@ -1,0 +1,37 @@
+# Linux host networking keeps the IBKR socket and backend bound to loopback.
+# The broker gateway itself must be installed and logged in separately.
+services:
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    network_mode: host
+    command: ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--no-access-log", "--timeout-graceful-shutdown", "5"]
+    environment:
+      FO_MODE: ${FO_MODE:-us_demo}
+      FO_API_TOKEN: ${FO_API_TOKEN:?Generate the private US configuration first}
+      FO_DATABASE: /data/us-paper.db
+      FO_LIVE_ORDERS: "false"
+      IBKR_HOST: "127.0.0.1"
+      IBKR_PORT: ${IBKR_PORT:-4002}
+      IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-71}
+      IBKR_WATCHLIST_FILE: /etc/compass/us-watchlist.json
+    volumes:
+      - us-data:/data
+      - ./us-watchlist.json:/etc/compass/us-watchlist.json:ro
+    stop_grace_period: 15s
+  https:
+    image: caddy:2.10.0-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      FO_DOMAIN: ${FO_DOMAIN:?Configure the hostname pointing to your NEW server}
+    volumes:
+      - ./Caddyfile.us:/etc/caddy/Caddyfile:ro
+      - us-tls-data:/data
+      - us-tls-config:/config
+    depends_on:
+      - backend
+volumes:
+  us-data:
+  us-tls-data:
+  us-tls-config:

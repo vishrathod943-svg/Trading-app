@@ -11,6 +11,17 @@ import org.json.JSONObject
 
 @Composable fun AutomationPanel(vm: CompassViewModel, s: CompassState, capital: String, risk: String) {
     val broker=s.broker
+    if(broker?.optString("mode") in listOf("ibkr","us_demo")) {
+        Card { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text(if(broker?.optString("mode")=="us_demo") "US demo · synthetic research" else "IBKR · read-only research",fontSize=20.sp,fontWeight=FontWeight.Bold)
+            Text("${broker?.optInt("qualified_count")} / ${broker?.optInt("universe_count")} instruments qualified")
+            Text("${broker?.optInt("analysed_count")} have enough daily history for analysis")
+            Text("Data: ${broker?.optJSONObject("data_types")?.toString()?:"waiting"}",fontSize=12.sp)
+            Text("Broker/automatic orders are disabled in this version. Log into IB Gateway/TWS separately; never enter an IBKR password into this app.",fontSize=12.sp)
+            if(!(broker?.isNull("error")!=false)) Text(broker?.optString("error")?:"",fontSize=12.sp)
+        } }
+        return
+    }
     val auto=s.automation
     var mode by remember(auto?.optString("mode")) { mutableStateOf(auto?.optString("mode")?:"paper") }
     var rr by remember(auto?.optDouble("rr")) { mutableStateOf(auto?.optString("rr","3")?:"3") }
@@ -23,7 +34,7 @@ import org.json.JSONObject
     val enabled=auto?.optBoolean("enabled")==true
     Card { Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text("Kite connection & automation",fontSize=20.sp,fontWeight=FontWeight.Bold)
-        Text(if(broker?.optString("mode")=="kite") "${broker.optInt("analysed_count")} / ${broker.optInt("universe_count")} symbols analysed · ${if(ready) "Ready" else "Not ready"}" else "Connect a Kite backend to continue",fontSize=12.sp)
+        Text(if(broker?.optString("mode")=="kite") "${broker?.optInt("analysed_count")} / ${broker?.optInt("universe_count")} symbols analysed · ${if(ready) "Ready" else "Not ready"}" else "Connect a Kite backend to continue",fontSize=12.sp)
         Text("Last broker tick: ${if(broker==null || broker.isNull("tick_age_ms")) "—" else "${broker.optLong("tick_age_ms")} ms ago"}",fontSize=12.sp)
         Text("Updates arrive with the broker feed. This is not a millisecond execution guarantee.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
