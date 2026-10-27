@@ -24,3 +24,5 @@ Normal non-proxied servers can omit the optional CA secret. Never use `--trusted
 Callback follow-up: the focused public-callback test passes, verifying a non-reflecting, no-store landing page and continued authentication on broker endpoints. Live Compose also validates with an empty access token for initial HTTPS/login bootstrap. Actual hosted redirect and broker session exchange remain unverified.
 
 Editor-free configuration helper: 3 focused tests pass for private file creation, token preservation, input rejection without file overwrite, and symlink rejection. Only synthetic test credentials were used.
+
+Daily-login mobile follow-up: focused tests cover extraction of a token from the full expected HTTPS redirect URL or raw input; reject wrong-host, duplicate/missing token, failed status, embedded credentials and fragments; and verify diagnostic messages never echo exception contents. Real broker session exchange remains unverified.
