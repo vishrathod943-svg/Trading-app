@@ -29,3 +29,5 @@ sudo docker compose --env-file "$HOME/compass-private/us.env" -f deploy/compose.
 ```
 
 While desktop access is needed, subsequent Compose operations must include both private env files and both compose files, in the same order used by the helper. Using only the base configuration removes the desktop proxy. Do not commit either private env file or share screenshots containing credentials. Before entering credentials, confirm valid HTTPS on your intended hostname. The Gateway installation and read-only API login are separate next steps; phone touch/keyboard behavior and an actual IBKR login have not been verified here.
+
+For a short restart/build command that preserves phone access and the existing broker mode, run `bash scripts/start-us.sh --desktop` from the checkout. This validates configuration before starting services and never prints private settings.
