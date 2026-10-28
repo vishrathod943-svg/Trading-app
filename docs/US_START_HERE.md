@@ -37,6 +37,8 @@ After Caddy obtains HTTPS, open `https://YOUR_NEW_HOSTNAME/app` in Safari. Enter
 
 The synthetic watchlist includes AAPL, MSFT, NVDA, TSLA, AMZN, META, SPY, QQQ, MES, MNQ, ES and NQ. These are simulated prices, not delayed live data or real recommendations.
 
+Optional personal-phone desktop access: after installing a loopback-only VNC/noVNC desktop, use the [HTTPS desktop guide](PHONE_DESKTOP.md). It adds a separate website password without exposing desktop ports.
+
 ## 4. Prepare the official IBKR gateway separately
 
 Use the official [IBKR TWS API documentation](https://www.interactivebrokers.com/campus/ibkr-api-page/twsapi-doc/) and [IB Gateway download](https://www.interactivebrokers.com/en/trading/ibgateway-stable.php). Install it on your own computer or the new server's secured graphical desktop. This project does not collect the username, password or MFA code, automate 2FA, or install an unofficial credential-containing gateway image.

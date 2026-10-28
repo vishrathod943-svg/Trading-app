@@ -46,3 +46,8 @@ Daily-login mobile follow-up: focused tests cover extraction of a token from the
 - Android assembleDebug and lintDebug passed. Version 0.3.1/code 4 adds timeframe controls and completed-bar ICT overlays.
 - Chromium at a 390 × 844 mobile viewport passed all five timeframe selections, synthetic labels and overlay toggle with no JavaScript page exceptions. Screenshot: `docs/images/intraday-mobile.png`. Actual Safari/iOS and physical Android remain untested.
 - This update is source/APK preparation, not AWS provisioning or a verified live-data deployment. Charts poll cached historical bars, not millisecond streaming candles.
+
+
+## Optional phone desktop HTTPS proxy
+
+Two focused tests pass for bcrypt-only private configuration, mode 600, symlink rejection and password length validation. Combined Compose preserves literal bcrypt dollars and replaces only the Caddyfile mount. Caddy 2.10.0 validates the config. A temporary local Caddy container verified unauthenticated/wrong-password desktop requests and unauthenticated WebSocket paths return 401, valid credentials proxy the stripped desktop path with no-store headers, and `/app` routing remains intact. No real desktop, phone browser, broker login or user server was accessed in these checks. The opt-in helper requires loopback listeners and leaves real trading disabled.

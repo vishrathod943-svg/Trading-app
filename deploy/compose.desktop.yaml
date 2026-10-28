@@ -1,0 +1,8 @@
+# Optional opt-in HTTPS desktop proxy. VNC and noVNC must remain loopback-only.
+# Combine with compose.us.yaml and both private env files; never use alone.
+services:
+  https:
+    environment:
+      DESKTOP_PASSWORD_HASH: ${DESKTOP_PASSWORD_HASH:?Run scripts/configure-desktop.py first}
+    volumes:
+      - ./Caddyfile.desktop:/etc/caddy/Caddyfile:ro

@@ -1,0 +1,21 @@
+{$FO_DOMAIN} {
+    redir /desktop /desktop/ 308
+    handle_path /desktop/* {
+        basic_auth {
+            operator {$DESKTOP_PASSWORD_HASH}
+        }
+        header {
+            Cache-Control "no-store"
+            Referrer-Policy "no-referrer"
+            X-Frame-Options "DENY"
+        }
+        reverse_proxy 127.0.0.1:6080
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8000
+    }
+    header {
+        X-Content-Type-Options nosniff
+        Strict-Transport-Security "max-age=31536000"
+    }
+}
