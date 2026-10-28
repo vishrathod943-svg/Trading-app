@@ -69,3 +69,10 @@ The watchlist now preserves instrument rows/buttons across quote messages instea
 - Android v0.4.0/code 5 assembleDebug and lintDebug pass; APK signature verifies. The Trades tab adds the monitor controls, simulated balance/journal and matching chart levels. No physical-device test occurred.
 - Mobile-sized Chromium passed rejection of arming in synthetic mode, fixed $1,000/0.5%/2R request payload, simulated on/off journal controls and chart rendering with paper levels. UI test data were mocked; no real broker feed or hosted server was accessed.
 - Broker historical permissions, real delayed-data availability, actual scalp fills/performance, slippage, borrowing/margin and exchange holiday calendars remain unverified or excluded. No money was transferred, no subscription purchased and no brokerage order sent. Restarted or gap-affected open simulations remain unresolved and block new arming until reconciliation; no automatic reconciliation is implemented.
+
+
+## v0.4.1 ALL-watchlist paper scope
+
+The final full backend suite passes 95 tests, including 20 paper tests and API ALL-scope assertions. New coverage verifies two symbols share exactly one open position and global virtual balance/counters, independent cursors remain unchanged when another symbol processes, a new symbol baseline does not invalidate a different symbol's position, the expanded deployment file contains exactly 36 stocks/ETFs plus 4 futures within the 40-symbol cap, and a same-bar intrabar exit on one symbol cannot fund an overlapping entry at that bar’s open on another symbol.
+
+Android assembleDebug/lintDebug and APK signature verification pass (v0.4.1/code 6). Mobile Chromium with mocked paper responses passes ALL default, 36 eligible symbol options, shared $1,000/0.5% payload, active server scope and initialized count, field locking while enabled and pause controls. No actual expanded-universe broker scan, IBKR capacity entitlement or hosted-user deployment was performed here. The ALL worker serializes historical requests and prioritizes an open paper position; bounded coverage does not represent every US listing.

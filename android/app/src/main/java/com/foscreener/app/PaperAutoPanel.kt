@@ -13,14 +13,14 @@ import org.json.JSONObject
 
 @Composable fun PaperAutoPanel(repository:Repository) {
     var status by remember { mutableStateOf<JSONObject?>(null) }
-    var symbol by remember { mutableStateOf("AAPL") }
+    var symbol by remember { mutableStateOf("ALL") }
     var timeframe by remember { mutableStateOf("5m") }
     var error by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     val scope=rememberCoroutineScope()
     LaunchedEffect(Unit) {
         while(true) {
-            try { status=JSONObject(repository.request("/paper-auto"));error="" }
+            try { status=JSONObject(repository.request("/paper-auto"));status?.takeIf { it.optBoolean("enabled") }?.optJSONObject("config")?.let { c -> symbol=c.optString("symbol","ALL");timeframe=c.optString("timeframe","5m") };error="" }
             catch(e:CancellationException) { throw e }
             catch(e:Exception) { error=e.message?:"Paper monitor unavailable" }
             delay(15000)
@@ -38,15 +38,16 @@ import org.json.JSONObject
     } }
     Card { Column(Modifier.fillMaxWidth().padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("Automatic paper scalping",style=MaterialTheme.typography.titleLarge)
-        Text("Delayed data only · No broker orders",fontSize=12.sp)
+        Text("ALL scans every eligible watchlist stock/ETF · Delayed data only · No broker orders",fontSize=12.sp)
         Text("$1,000 simulated balance · 0.5% risk (initially $5) · $20 daily loss limit · one open position · max 30-minute hold · max 10 entries/day · stop after 3 consecutive losses.",fontSize=12.sp)
         Text("Long-only stocks/ETFs; regular US session entries only. Futures and shorts skipped. New completed bars only; next-bar-open simulated entry, conservative stop-first exits. Delayed data cannot establish real scalping performance.",fontSize=11.sp)
-        OutlinedTextField(symbol,{symbol=it.uppercase()},singleLine=true,label={Text("Stock / ETF symbol")},enabled=status?.optBoolean("enabled")!=true)
+        OutlinedTextField(symbol,{symbol=it.uppercase()},singleLine=true,label={Text("Stock / ETF symbol, or ALL")},enabled=status?.optBoolean("enabled")!=true)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) { listOf("5m","15m").forEach { tf -> FilterChip(selected=timeframe==tf,onClick={timeframe=tf},enabled=status?.optBoolean("enabled")!=true,label={Text(tf)}) } }
         Button(onClick={setEnabled(true)},enabled=!busy && status?.optBoolean("enabled")!=true) { Text("Start delayed paper monitor") }
         OutlinedButton(onClick={setEnabled(false)},enabled=!busy && status?.optBoolean("enabled")==true) { Text("Pause paper monitor") }
         if(error.isNotEmpty()) Text(error,color=MaterialTheme.colorScheme.error,fontSize=12.sp)
         status?.let { p ->
+            Text("Scope: ${p.optJSONObject("config")?.optString("symbol")?:"not armed"} · ${p.optJSONObject("config")?.optString("timeframe")?:"—"}",fontSize=12.sp)
             Text("${if(p.optBoolean("enabled")) "PAPER MONITOR ON" else "PAPER MONITOR OFF"} · ${p.optString("reason")}",fontSize=12.sp)
             p.optJSONObject("risk")?.let { r -> Text("Balance ${r.money("balance","USD")} · Day P&L ${r.money("day_pnl","USD")} (UTC)",fontSize=12.sp) }
             p.optJSONArray("trades")?.objects()?.takeLast(5)?.reversed()?.forEach { t -> Text("PAPER ${t.optString("symbol")} · ${t.optString("state")}\nEntry ${t.money("entry")} · Stop ${t.money("stop")} · Target ${t.money("target")}\nExit ${t.money("exit_price")} · net simulated P&L ${t.money("pnl")}",fontSize=12.sp) }

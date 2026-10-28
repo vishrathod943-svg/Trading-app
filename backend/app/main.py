@@ -50,7 +50,7 @@ async def lifespan(app):
             except asyncio.CancelledError:pass
         if service: await service.stop()
 
-app=FastAPI(title='F&O Compass',version='0.4.0',lifespan=lifespan,
+app=FastAPI(title='F&O Compass',version='0.4.1',lifespan=lifespan,
     description='Single-account Kite streaming and guarded option automation; demo remains available.')
 
 @app.middleware('http')
@@ -141,27 +141,43 @@ async def paper_monitor():
         try:
             state=paper_auto.status()
             if state['enabled']:
-                config=state['config'];symbol=config['symbol'];result=service.results.get(symbol)
-                if not service.connected or not result:paper_auto.waiting('Waiting for gateway and contract qualification')
-                elif service.requested_data_type!='delayed':paper_auto.waiting('Delayed request mode required; simulation paused')
-                else:
-                    q=service.quote_view().get(result['exchange']+':'+symbol)
-                    if not q or q.get('data_type')!='delayed' or q.get('age',999)>90:paper_auto.waiting('Waiting for a fresh received DELAYED feed; no live or synthetic substitution')
+                config=state['config']
+                symbols=[s.symbol for s in service.specs if s.security_type=='STK'] if config['symbol']=='ALL' else [config['symbol']]
+                active={t['symbol'] for t in state['trades'] if t['state']=='OPEN'}
+                if active:symbols=[s for s in symbols if s in active]
+                symbols.sort(key=lambda s:s not in active)
+                for symbol in symbols:
+                    current=paper_auto.status()
+                    if not current['enabled']:break
+                    if any(t['state']=='OPEN' and t['symbol']!=symbol for t in current['trades']):break
+                    result=service.results.get(symbol)
+                    if not service.connected or not result:paper_auto.waiting('Waiting for gateway and qualification: '+symbol)
+                    elif service.requested_data_type!='delayed':paper_auto.waiting('Delayed request mode required; simulation paused')
                     else:
-                        data=await chart_service.get(service,symbol,config['timeframe'])
-                        q=service.quote_view().get(result['exchange']+':'+symbol) if service.connected else None
-                        await asyncio.to_thread(paper_auto.process,data['candles'],result['contract'],q)
+                        q=service.quote_view().get(result['exchange']+':'+symbol)
+                        if not q or q.get('data_type')!='delayed' or q.get('age',999)>90:paper_auto.waiting('Waiting for delayed data: '+symbol+'; live/synthetic feeds excluded')
+                        else:
+                            try:
+                                data=await chart_service.get(service,symbol,config['timeframe'])
+                                q=service.quote_view().get(result['exchange']+':'+symbol) if service.connected else None
+                                await asyncio.to_thread(paper_auto.process_symbol,symbol,data['candles'],result['contract'],q)
+                            except ValueError:paper_auto.waiting('Historical data waiting/pacing limited: '+symbol)
+                            await asyncio.sleep(3.2)
+                    await asyncio.sleep(.1)
         except asyncio.CancelledError:raise
-        except Exception:paper_auto.waiting('Paper monitor waiting: historical data or metadata unavailable; no simulated fills fabricated')
-        await asyncio.sleep(60)
+        except Exception:paper_auto.waiting('Paper monitor waiting: data or metadata unavailable; no simulated fills fabricated')
+        await asyncio.sleep(15)
 
 @app.get('/paper-auto')
-def paper_auto_status():return paper_auto.status()
+def paper_auto_status():
+    result=paper_auto.status()
+    result['eligible_symbols']=[s.symbol for s in getattr(service,'specs',()) if s.security_type=='STK'] if MODE=='ibkr' else []
+    return result
 
 class PaperConfig(BaseModel):
     model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
     enabled:bool
-    symbol:str=Field('AAPL',pattern=r'^[A-Z][A-Z0-9.]{0,12}$')
+    symbol:str=Field('ALL',pattern=r'^[A-Z][A-Z0-9.]{0,12}$')
     timeframe:str=Field('5m',pattern='^(5m|15m)$')
     capital:float=Field(1000,ge=1000,le=1000)
     risk_pct:float=Field(.5,gt=0,le=.5)
@@ -171,9 +187,11 @@ class PaperConfig(BaseModel):
 def paper_auto_config(body:PaperConfig):
     if not body.enabled:return paper_auto.pause()
     if MODE!='ibkr' or service.requested_data_type!='delayed':raise HTTPException(409,'Delayed IBKR mode is required. No live or synthetic auto simulation.')
-    result=service.results.get(body.symbol)
-    if not result or result.get('security_type')!='STK':raise HTTPException(409,'Select a qualified US stock/ETF. Futures margin and short borrowing are not verified.')
-    try:return paper_auto.configure(body.model_dump(exclude={'enabled'}))
+    eligible=any(s.security_type=='STK' for s in service.specs) if body.symbol=='ALL' else service.results.get(body.symbol,{}).get('security_type')=='STK'
+    if not eligible:raise HTTPException(409,'Select a qualified US stock/ETF. Futures margin and short borrowing are not verified.')
+    try:
+        paper_auto.configure(body.model_dump(exclude={'enabled'}))
+        return paper_auto_status()
     except ValueError as e:raise HTTPException(409,str(e))
 
 @app.get('/alerts')

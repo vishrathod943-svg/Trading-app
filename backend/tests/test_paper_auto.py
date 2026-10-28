@@ -95,6 +95,11 @@ def test_api_requires_delayed_stock(monkeypatch,tmp_path):
         assert r.status_code==200 and r.json()['simulation'] and not r.json()['orders_enabled']
         assert c.post('/paper-auto',headers=h,json=dict(CONFIG,enabled=True,risk_pct=2)).status_code==422
         assert not c.post('/paper-auto',headers=h,json={'enabled':False}).json()['enabled']
+        from types import SimpleNamespace
+        session.specs=[SimpleNamespace(symbol=s,security_type='STK') for s in ('AAPL','MSFT')]
+        response=c.post('/paper-auto',headers=h,json=dict(CONFIG,symbol='ALL',enabled=True))
+        assert response.status_code==200 and response.json()['config']['symbol']=='ALL'
+        assert response.json()['eligible_symbols']==['AAPL','MSFT']
 
 
 @pytest.mark.parametrize('field,value',[('day_pnl',-20),('entries',10),('losses',3)])
@@ -132,3 +137,45 @@ def test_no_entries_or_signals_outside_regular_session(tmp_path,monkeypatch):
         for b in c:b['time']=(datetime.fromisoformat(b['time'])-timedelta(hours=6)).isoformat()
         e.process(c,META,QUOTE,NOW-timedelta(hours=6))
     assert not e.status()['trades'] and not e.status()['pending']
+
+
+
+def test_all_symbols_share_one_position_and_balance(tmp_path,monkeypatch):
+    e=PaperAuto(str(tmp_path/'multi.db'));e.configure(dict(CONFIG,symbol='ALL'))
+    monkeypatch.setattr(module,'signal',fixed_signal)
+    for count in (30,31,32):
+        for symbol,cid in [('AAPL',1),('MSFT',2)]:
+            e.process_symbol(symbol,bars(count),dict(META,con_id=cid),QUOTE,NOW)
+    state=e.status();opened=[t for t in state['trades'] if t['state']=='OPEN']
+    assert len(opened)==1 and opened[0]['symbol']=='AAPL'
+    assert state['risk']['entries']==1 and state['risk']['balance']==1000
+    assert set(state['symbol_states'])=={'AAPL','MSFT'}
+    assert state['symbol_states']['MSFT']['cursor']==bars(32)[-1]['time']
+    # A newly initialized symbol must not invalidate another symbol's open position.
+    e.process_symbol('NVDA',bars(32),dict(META,con_id=3),QUOTE,NOW)
+    assert e.status()['enabled'] and e.status()['trades'][0]['state']=='OPEN'
+    c=bars(33);c[-1].update(low=98)
+    e.process_symbol('AAPL',c,META,QUOTE,NOW)
+    assert e.status()['risk']['balance']<1000
+    assert e.status()['symbol_states']['MSFT']['cursor']==bars(32)[-1]['time']
+
+
+def test_expanded_watchlist_is_valid_and_bounded():
+    from app.us_market import load_watchlist
+    from pathlib import Path
+    specs=load_watchlist(Path(__file__).resolve().parents[2]/'deploy/us-watchlist.json')
+    assert len(specs)==40
+    assert sum(s.security_type=='STK' for s in specs)==36
+    assert len({s.symbol for s in specs})==40
+
+
+
+def test_no_overlapping_same_bar_entries_after_an_intrabar_exit(tmp_path,monkeypatch):
+    e=PaperAuto(str(tmp_path/'overlap.db'));e.configure(dict(CONFIG,symbol='ALL'))
+    monkeypatch.setattr(module,'signal',fixed_signal)
+    for count in (30,31):
+        for symbol,cid in [('AAPL',1),('MSFT',2)]:e.process_symbol(symbol,bars(count),dict(META,con_id=cid),QUOTE,NOW)
+    c=bars(32);c[-1].update(high=104,low=98)
+    for symbol,cid in [('AAPL',1),('MSFT',2)]:e.process_symbol(symbol,c,dict(META,con_id=cid),QUOTE,NOW)
+    assert len(e.status()['trades'])==1 and e.status()['trades'][0]['state']=='STOP'
+    assert e.status()['risk']['entries']==1

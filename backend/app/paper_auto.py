@@ -36,17 +36,19 @@ def signal(candles,timeframe):
 
 class PaperAuto:
     def __init__(self,path):
-        self.lock=RLock();self.db=sqlite3.connect(path,check_same_thread=False)
+        self.lock=RLock();self._batch=False;self.db=sqlite3.connect(path,check_same_thread=False)
         self.db.execute('CREATE TABLE IF NOT EXISTS paper_auto_state(id INTEGER PRIMARY KEY CHECK(id=1),body TEXT NOT NULL)')
         row=self.db.execute('SELECT body FROM paper_auto_state WHERE id=1').fetchone()
         self.s=json.loads(row[0]) if row else dict(enabled=False,config=None,cursor=None,pending=None,trades=[],events=[],contract_id=None)
         self.s.setdefault('risk',None)
+        self.s.setdefault('symbol_states',{})
         self.s['enabled']=False;self.s['pending']=None
         for t in self.s['trades']:
             if t['state']=='OPEN':t['state']='RESTART_UNRESOLVED'
         self.s['reason']='Stopped. Arm explicitly; restarting never resumes or backfills trades.'
         self._save()
     def _save(self):
+        if self._batch:return
         with self.db:self.db.execute('INSERT OR REPLACE INTO paper_auto_state VALUES(1,?)',(json.dumps(self.s,allow_nan=False),))
     def status(self):
         with self.lock:return dict(**copy.deepcopy(self.s),simulation=True,orders_enabled=False,data_requirement='delayed',warning='Delayed OHLC simulation only. No broker fills. Illustrative fees only; no slippage, margin or buying-power validation. Long-only stocks; futures and shorts skipped. Not live performance.')
@@ -59,7 +61,7 @@ class PaperAuto:
             if any(t['state'].endswith('UNRESOLVED') for t in self.s['trades']):raise ValueError('Unresolved paper position requires journal reconciliation before new entries; no unknown P&L will be ignored')
             if config['capital']!=1000 or not 0<config['risk_pct']<=.5:raise ValueError('This scalping simulation uses $1,000 and at most 0.5% risk per trade')
             if self.s['risk'] is None:self.s['risk']=dict(balance=1000.0,day=None,day_pnl=0.0,entries=0,losses=0)
-            self.s.update(enabled=True,config=config,cursor=None,pending=None,contract_id=None,reason='Waiting for delayed quotes and completed bars; historical setups will not be replayed')
+            self.s.update(enabled=True,config=config,cursor=None,pending=None,contract_id=None,symbol_states={},reason='Waiting for delayed quotes and completed bars; historical setups will not be replayed')
             self.event('Armed delayed-data paper monitor; not a broker order');self._save()
             return self.status()
     def pause(self):
@@ -71,16 +73,16 @@ class PaperAuto:
             self.event(self.s['reason']);self._save();return self.status()
     def waiting(self,reason):
         with self.lock:self.s['reason']=reason;self._save()
-    def _baseline(self,candles,cid,reason):
+    def _baseline(self,candles,cid,reason,symbol):
         self.s.update(cursor=candles[-1]['time'],contract_id=cid,pending=None,reason=reason)
         for t in self.s['trades']:
-            if t['state']=='OPEN':
+            if t['state']=='OPEN' and t['symbol']==symbol:
                 t['state']='DATA_GAP_UNRESOLVED';self.s['enabled']=False;self.s['reason']='Disarmed: unresolved paper position after data gap; reconciliation required'
         self.event(reason)
-    def process(self,candles,meta,quote,now=None):
+    def process(self,candles,meta,quote,now=None,symbol=None):
         with self.lock:
             if not self.s['enabled']:return
-            now=now or datetime.now(timezone.utc);config=self.s['config'];seconds={'5m':300,'15m':900}[config['timeframe']]
+            now=now or datetime.now(timezone.utc);config=self.s['config'];symbol=symbol or config['symbol'];seconds={'5m':300,'15m':900}[config['timeframe']]
             # Returned broker feed type is authoritative. Even entitled live data is rejected here.
             if quote is None or quote.get('data_type')!='delayed' or quote.get('price') is None or quote.get('age',float('inf'))>90:
                 self.waiting('Waiting for a fresh received DELAYED quote; live, frozen, synthetic and missing feeds are excluded');return
@@ -100,22 +102,23 @@ class PaperAuto:
             except (ValueError,KeyError,TypeError):
                 self.waiting('Waiting: valid recent completed bars and unexpired broker contract metadata required');return
             if self.s['cursor'] is None:
-                self._baseline(candles,cid,'Baseline set. Waiting for a NEW completed candle; no historical entries replayed');self._save();return
+                self._baseline(candles,cid,'Baseline set. Waiting for a NEW completed candle; no historical entries replayed',symbol);self._save();return
             new=[(i,b) for i,b in enumerate(candles) if stamp(b['time'])>stamp(self.s['cursor'])]
             if not new:self.s['reason']='Waiting for next completed delayed candle';self._save();return
             index,b=new[-1]
             if cid!=self.s['contract_id'] or len(new)!=1 or stamp(b['time'])-stamp(self.s['cursor'])!=seconds:
-                self._baseline(candles,cid,'Data gap or contract change: no hindsight fills; unresolved position retained in journal');self._save();return
+                self._baseline(candles,cid,'Data gap or contract change: no hindsight fills; unresolved position retained in journal',symbol);self._save();return
             risk=self.s['risk']
             today=now.date().isoformat()
             if risk['day']!=today:risk.update(day=today,day_pnl=0.0,entries=0,losses=0)
             blocked=risk['day_pnl']<=-20 or risk['losses']>=3 or risk['entries']>=10 or risk['balance']<=0
-            active=next((t for t in reversed(self.s['trades']) if t['state']=='OPEN'),None)
+            active=next((t for t in reversed(self.s['trades']) if t['state']=='OPEN' and t['symbol']==symbol),None)
             pending=self.s['pending'];self.s['pending']=None
             market_time=datetime.fromtimestamp(stamp(b['time']),ZoneInfo('America/New_York'))
             minutes=market_time.hour*60+market_time.minute
             entry_session=market_time.weekday()<5 and 575<=minutes<930
-            if pending and not active and not blocked and entry_session:
+            other_active=any(t['state']=='OPEN' and t['symbol']!=symbol for t in self.s['trades'])
+            if pending and not active and not other_active and not blocked and entry_session and stamp(b['time'])>=risk.get('next_entry_after',0):
                 entry=float(b['open']);sign=1 if pending['direction']=='LONG' else -1
                 stop=(math.floor(pending['stop']/tick)-1)*tick if sign==1 else (math.ceil(pending['stop']/tick)+1)*tick
                 distance=sign*(entry-stop)
@@ -132,8 +135,8 @@ class PaperAuto:
                     planned_risk=distance*quantity*multiplier+cost
                     target_distance=(planned_risk*config['rr']+cost)/(quantity*multiplier)
                     target=entry+sign*math.ceil(target_distance/tick)*tick
-                    active=dict(id=(self.s['trades'][-1]['id']+1 if self.s['trades'] else 1),symbol=config['symbol'],direction=pending['direction'],state='OPEN',signal_time=pending['signal_time'],entry_time=b['time'],entry=entry,stop=round(stop,8),target=round(target,8),quantity=quantity,planned_risk=round(planned_risk,2),target_net_rr=config['rr'],multiplier=multiplier,currency='USD',last_price=entry,exit_price=None,exit_time=None,pnl=None,observed_at=now.isoformat(),reason=pending['reason'])
-                    risk['entries']+=1;self.s['trades'].append(active);self.s['trades']=self.s['trades'][-200:];self.event('Simulated next-candle-open entry: '+config['symbol'])
+                    active=dict(id=(self.s['trades'][-1]['id']+1 if self.s['trades'] else 1),symbol=symbol,direction=pending['direction'],state='OPEN',signal_time=pending['signal_time'],entry_time=b['time'],entry=entry,stop=round(stop,8),target=round(target,8),quantity=quantity,planned_risk=round(planned_risk,2),target_net_rr=config['rr'],multiplier=multiplier,currency='USD',last_price=entry,exit_price=None,exit_time=None,pnl=None,observed_at=now.isoformat(),reason=pending['reason'])
+                    risk['entries']+=1;risk['next_entry_after']=stamp(b['time'])+seconds;self.s['trades'].append(active);self.s['trades']=self.s['trades'][-200:];self.event('Simulated next-candle-open entry: '+symbol)
                 else:self.event('Skipped paper entry: risk/notional limit, invalid stop, or unverified short/futures permissions')
             if active:
                 sign=1 if active['direction']=='LONG' else -1;o=b['open'];h=b['high'];l=b['low'];stop=active['stop'];target=active['target']
@@ -147,10 +150,22 @@ class PaperAuto:
                 active.update(state=state,last_price=b['close'])
                 if exit_price is not None:
                     active.update(exit_price=exit_price,exit_time=b['time'],pnl=round(sign*(exit_price-active['entry'])*active['quantity']*active['multiplier']-(2+.01*active['quantity']),2),cost_model=round(2+.01*active['quantity'],2))
-                    risk['balance']=round(risk['balance']+active['pnl'],2);risk['day_pnl']=round(risk['day_pnl']+active['pnl'],2);risk['losses']=risk['losses']+1 if active['pnl']<0 else 0
+                    risk['next_entry_after']=stamp(b['time'])+seconds;risk['balance']=round(risk['balance']+active['pnl'],2);risk['day_pnl']=round(risk['day_pnl']+active['pnl'],2);risk['losses']=risk['losses']+1 if active['pnl']<0 else 0
                     self.event('Simulated '+state+' exit; stop first when intrabar ordering is ambiguous')
             # No re-entry on an exit candle; no signal uses bars after the signal candle.
             signal_session=market_time.weekday()<5 and 575<=minutes+seconds/60<925
             if active is None and not blocked and signal_session:self.s['pending']=signal(candles[:index+1],config['timeframe'])
             if self.s['pending']:self.event('New closed-candle setup; waiting for next candle (paper only)')
             self.s['cursor']=b['time'];self.s['reason']='Daily risk limit reached; new simulated entries blocked' if blocked else 'Monitoring completed delayed bars; simulation only';self._save()
+
+
+    def process_symbol(self,symbol,candles,meta,quote,now=None):
+        """Independent bar cursors; account risk and max-one position are shared."""
+        with self.lock:
+            if not self.s['enabled']:return
+            slot=self.s['symbol_states'].get(symbol,dict(cursor=None,pending=None,contract_id=None))
+            self.s.update(slot);self._batch=True
+            try:self.process(candles,meta,quote,now,symbol=symbol)
+            finally:
+                self.s['symbol_states'][symbol]={k:self.s[k] for k in ('cursor','pending','contract_id')}
+                self._batch=False;self._save()

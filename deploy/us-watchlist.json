@@ -36,6 +36,156 @@
     "sector": "Technology"
   },
   {
+    "symbol": "GOOGL",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "GOOG",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "AVGO",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "AMD",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "INTC",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "MU",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "QCOM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "ARM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "ORCL",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "CRM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "PLTR",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "ADBE",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "NFLX",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "UBER",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "JPM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "BAC",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "GS",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "V",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "MA",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "WMT",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "COST",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "DIS",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "XOM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "CVX",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
+    "symbol": "UNH",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "US equities"
+  },
+  {
     "symbol": "SPY",
     "security_type": "STK",
     "exchange": "SMART",
@@ -43,6 +193,24 @@
   },
   {
     "symbol": "QQQ",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "ETF"
+  },
+  {
+    "symbol": "IWM",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "ETF"
+  },
+  {
+    "symbol": "DIA",
+    "security_type": "STK",
+    "exchange": "SMART",
+    "sector": "ETF"
+  },
+  {
+    "symbol": "XLK",
     "security_type": "STK",
     "exchange": "SMART",
     "sector": "ETF"

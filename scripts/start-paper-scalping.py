@@ -7,7 +7,7 @@ import urllib.request
 import urllib.error
 
 p=argparse.ArgumentParser(description='Start the $1,000 delayed paper monitor, not real trading')
-p.add_argument('--symbol',default='AAPL')
+p.add_argument('--symbol',default='ALL')
 p.add_argument('--timeframe',choices=('5m','15m'),default='5m')
 a=p.parse_args()
 path=Path.home()/'compass-private/us.env'
