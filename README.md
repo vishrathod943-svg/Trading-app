@@ -1,8 +1,10 @@
-# Compass v0.3.1 · US stocks and index-futures research
+# Compass v0.4 · US stocks and index-futures research
 
 **US setup starts here: [US_START_HERE.md](docs/US_START_HERE.md).** Version 0.3 adds a read-only IBKR research adapter, USD contract metadata, futures multiplier-aware risk calculations, a 12-instrument synthetic US demo, and an iPhone browser dashboard at `/app`. It does not submit IBKR orders. A separately installed/logged-in official TWS or IB Gateway and market-data entitlements are required for live data. No new AWS server has been provisioned; don't reuse the deleted server's old IP. See the [handoff checklist](docs/US_READY_CHECKLIST.md) and [synthetic mobile browser preview](docs/images/us-research-mobile.png).
 
 Version 0.3.1 adds 1m, 5m, 15m, hourly and daily chart selection with completed-bar ICT overlays. See [rules and limits](docs/ICT.md) and the [synthetic intraday preview](docs/images/intraday-mobile.png). Broker intraday charts require IBKR historical-data access; updates are cached, not millisecond candle streaming.
+
+Version 0.4 adds a separate **delayed-only automatic paper scalping monitor**, not broker orders: $1,000 virtual balance, at most 0.5% risk/entry, net fee-model RR targets, daily/consecutive-loss limits and chart levels. See [paper scalping rules](docs/PAPER_SCALPING.md). It is stopped until explicitly armed and never resumes automatically after restart.
 
 The sections below also document the retained India/Kite workflow.
 

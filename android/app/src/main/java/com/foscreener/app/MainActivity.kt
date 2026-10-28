@@ -1,6 +1,7 @@
 package com.foscreener.app
 
 import android.os.Bundle
+import androidx.compose.ui.graphics.nativeCanvas
 import kotlinx.coroutines.ensureActive
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -142,6 +143,15 @@ class MainActivity : ComponentActivity() {
 @Composable private fun Detail(s:CompassState,vm:CompassViewModel) {
     val d=s.detail ?: return
     var timeframe by remember(d.optString("symbol")) { mutableStateOf("1D") }
+    var paper by remember(d.optString("symbol")) { mutableStateOf<JSONObject?>(null) }
+    LaunchedEffect(d.optString("symbol")) {
+        while(true) {
+            try { paper=JSONObject(vm.repository.request("/paper-auto")) }
+            catch(e:kotlinx.coroutines.CancellationException) { throw e }
+            catch(_:Exception) { paper=null }
+            kotlinx.coroutines.delay(15000)
+        }
+    }
     var chart by remember(d.optString("symbol")) { mutableStateOf<JSONObject?>(null) }
     var chartStatus by remember(d.optString("symbol")) { mutableStateOf("") }
     LaunchedEffect(d.optString("symbol"),timeframe) {
@@ -166,7 +176,7 @@ class MainActivity : ComponentActivity() {
             Text(chartStatus,fontSize=11.sp)
             val cd=chart
             if(cd!=null) {
-                Candles(cd.getJSONArray("candles").objects(),cd.optJSONObject("ict"))
+                Candles(cd.getJSONArray("candles").objects(),cd.optJSONObject("ict"),paper?.optJSONArray("trades")?.objects()?.lastOrNull { it.optString("symbol")==d.optString("symbol") })
                 Text("FVG / OB candidates shaded; equilibrium in gold. Daily setup scores are separate. Research labels only.",fontSize=11.sp)
                 cd.optJSONObject("ict")?.optJSONArray("events")?.objects()?.takeLast(5)?.forEach { Text("${it.optString("time")} · ${it.optString("kind")} · ${it.optString("direction")}",fontSize=11.sp) }
             }
@@ -188,7 +198,7 @@ class MainActivity : ComponentActivity() {
         item { Card { Column(Modifier.padding(16.dp)) { Label("Options & fundamentals"); Text("Not supplied by this research view",fontSize=20.sp,modifier=Modifier.padding(vertical=8.dp)); Text("Connect a licensed broker adapter before selecting strikes, expiries or premiums. No option recommendation is fabricated.",fontSize=12.sp) } } }
     }
 }
-@Composable private fun Candles(candles:List<JSONObject>,ict:JSONObject?=null) {
+@Composable private fun Candles(candles:List<JSONObject>,ict:JSONObject?=null,paper:JSONObject?=null) {
     Canvas(Modifier.fillMaxWidth().height(220.dp).padding(top=18.dp)) {
         if(candles.isEmpty()) return@Canvas
         val high=candles.maxOf { it.getDouble("high") }; val low=candles.minOf { it.getDouble("low") }; val range=(high-low).coerceAtLeast(.01)
@@ -199,6 +209,16 @@ class MainActivity : ComponentActivity() {
             drawRect((if(z.optString("direction")=="bullish") Color(0xFF83C963) else Rose).copy(alpha=.16f),Offset(left,y(z.getDouble("high"))),androidx.compose.ui.geometry.Size((size.width-left).coerceAtLeast(0f),(y(z.getDouble("low"))-y(z.getDouble("high"))).coerceAtLeast(0f)))
         }
         ict?.optJSONObject("dealing_range")?.let { r -> drawLine(Color(0xFFDDB966),Offset(0f,y(r.getDouble("equilibrium"))),Offset(size.width,y(r.getDouble("equilibrium"))),1f) }
+        paper?.let { t ->
+            val paint=android.graphics.Paint().apply { color=android.graphics.Color.WHITE; textSize=20f }
+            listOf("entry","stop","target","exit_price").forEach { key ->
+                val p=t.optDouble(key)
+                if(p.isFinite() && p>=low && p<=high) {
+                    drawLine(Color(0xFFDDB966),Offset(0f,y(p)),Offset(size.width,y(p)),1f)
+                    drawContext.canvas.nativeCanvas.drawText("PAPER ${key.uppercase()} ${"%.2f".format(p)}",8f,y(p)-4,paint)
+                }
+            }
+        }
         val maxV=candles.maxOf { it.getDouble("volume") }.coerceAtLeast(1.0)
         repeat(4) { n -> val gy=priceHeight*n/3; drawLine(Color.Gray.copy(alpha=.15f),Offset(0f,gy),Offset(size.width,gy)) }
         candles.forEachIndexed { n,c ->
@@ -211,8 +231,9 @@ class MainActivity : ComponentActivity() {
 }
 @Composable private fun Trades(s:CompassState,vm:CompassViewModel) {
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-        item { Text("Your paper desk",fontSize=26.sp,fontWeight=FontWeight.Bold); Text("No real orders · maximum 5 active trades",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        if(s.trades.isEmpty()) item { Empty("No tracked trades","Use Overview → Run paper alert replay.") }
+        item { Text("Your paper desk",fontSize=26.sp,fontWeight=FontWeight.Bold); Text("Simulated orders only",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { PaperAutoPanel(vm.repository) }
+        if(s.trades.isEmpty() && s.broker?.optBoolean("read_only")!=true) item { Empty("No tracked trades","Use Overview → Run paper alert replay.") }
         items(s.trades) { t -> Card { Column(Modifier.fillMaxWidth().padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) { Row { Text(t.getString("symbol"),fontSize=20.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f)); Text(t.optString("direction"),color=MaterialTheme.colorScheme.primary) }; Label(t.optString("state").replace('_',' ')); Text("Entry ${t.money("entry")} · Last ${t.money("last_price")}",fontSize=12.sp); Text("SL ${t.money("stop")} · T1 ${t.money("target1")} · T2 ${t.money("target2")}",fontSize=11.sp); Text("Quantity: ${t.optInt("quantity")} · multiplier ${t.decimal("multiplier")}",fontSize=11.sp); if(!t.isNull("pnl")) Text("${t.optString("pnl_kind").replaceFirstChar { it.uppercase() }} P&L: ${t.money("pnl")} · before costs",fontSize=12.sp,color=MaterialTheme.colorScheme.primary); if(t.optString("state") in listOf("WAITING_ENTRY","ENTRY_TRIGGERED","T1_HIT")) OutlinedButton(onClick={vm.action("/trades/${t.getInt("id")}",method="DELETE")}) { Text("Stop tracking") } } } }
     }
 }

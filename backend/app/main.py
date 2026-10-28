@@ -16,6 +16,7 @@ from .provider import DemoProvider, USDemoProvider, UNIVERSE, US_UNIVERSE
 from .us_market import build_analysis, futures_risk
 from .charts import BrokerCharts, TIMEFRAMES, demo_chart
 from .ict import analyse_ict
+from .paper_auto import PaperAuto
 from .engine import Engine
 from .rules import load_rules
 
@@ -28,6 +29,7 @@ if MODE in ('kite','ibkr') and len(API_TOKEN)<32: raise RuntimeError('Broker mod
 provider=USDemoProvider() if MODE=='us_demo' else DemoProvider()
 market_universe=US_UNIVERSE if MODE=='us_demo' else UNIVERSE
 engine=Engine(os.getenv('FO_DATABASE','screener.db'))
+paper_auto=PaperAuto(os.getenv('FO_DATABASE','screener.db')+'.auto')
 service=None
 if MODE=='kite':
     from .kite_live import KiteLive
@@ -39,10 +41,16 @@ elif MODE=='ibkr':
 @asynccontextmanager
 async def lifespan(app):
     if service: service.start()
-    yield
-    if service: await service.stop()
+    paper_task=asyncio.create_task(paper_monitor()) if MODE=='ibkr' else None
+    try:yield
+    finally:
+        if paper_task:
+            paper_task.cancel()
+            try:await paper_task
+            except asyncio.CancelledError:pass
+        if service: await service.stop()
 
-app=FastAPI(title='F&O Compass',version='0.3.1',lifespan=lifespan,
+app=FastAPI(title='F&O Compass',version='0.4.0',lifespan=lifespan,
     description='Single-account Kite streaming and guarded option automation; demo remains available.')
 
 @app.middleware('http')
@@ -127,6 +135,46 @@ async def chart(symbol:str,timeframe:str=Query('5m',pattern='^(1m|5m|15m|1h|1D)$
     if MODE=='kite':raise HTTPException(409,'Intraday charts currently support IBKR and synthetic demo only')
     result=analyse(symbol)
     return demo_chart(symbol,timeframe,result['price'])
+
+async def paper_monitor():
+    while True:
+        try:
+            state=paper_auto.status()
+            if state['enabled']:
+                config=state['config'];symbol=config['symbol'];result=service.results.get(symbol)
+                if not service.connected or not result:paper_auto.waiting('Waiting for gateway and contract qualification')
+                elif service.requested_data_type!='delayed':paper_auto.waiting('Delayed request mode required; simulation paused')
+                else:
+                    q=service.quote_view().get(result['exchange']+':'+symbol)
+                    if not q or q.get('data_type')!='delayed' or q.get('age',999)>90:paper_auto.waiting('Waiting for a fresh received DELAYED feed; no live or synthetic substitution')
+                    else:
+                        data=await chart_service.get(service,symbol,config['timeframe'])
+                        q=service.quote_view().get(result['exchange']+':'+symbol) if service.connected else None
+                        await asyncio.to_thread(paper_auto.process,data['candles'],result['contract'],q)
+        except asyncio.CancelledError:raise
+        except Exception:paper_auto.waiting('Paper monitor waiting: historical data or metadata unavailable; no simulated fills fabricated')
+        await asyncio.sleep(60)
+
+@app.get('/paper-auto')
+def paper_auto_status():return paper_auto.status()
+
+class PaperConfig(BaseModel):
+    model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
+    enabled:bool
+    symbol:str=Field('AAPL',pattern=r'^[A-Z][A-Z0-9.]{0,12}$')
+    timeframe:str=Field('5m',pattern='^(5m|15m)$')
+    capital:float=Field(1000,ge=1000,le=1000)
+    risk_pct:float=Field(.5,gt=0,le=.5)
+    rr:float=Field(2,ge=1,le=3)
+
+@app.post('/paper-auto')
+def paper_auto_config(body:PaperConfig):
+    if not body.enabled:return paper_auto.pause()
+    if MODE!='ibkr' or service.requested_data_type!='delayed':raise HTTPException(409,'Delayed IBKR mode is required. No live or synthetic auto simulation.')
+    result=service.results.get(body.symbol)
+    if not result or result.get('security_type')!='STK':raise HTTPException(409,'Select a qualified US stock/ETF. Futures margin and short borrowing are not verified.')
+    try:return paper_auto.configure(body.model_dump(exclude={'enabled'}))
+    except ValueError as e:raise HTTPException(409,str(e))
 
 @app.get('/alerts')
 def alerts(): return engine.alerts()

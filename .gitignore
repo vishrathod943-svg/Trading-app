@@ -21,3 +21,6 @@ artifacts/
 *.keystore
 
 android/.kotlin/
+
+*.db.auto
+*.db.auto-*
