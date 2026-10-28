@@ -76,3 +76,17 @@ The watchlist is configured in `deploy/us-watchlist.json` (1–40 unique symbols
 Daily analysis requests two years of adjusted stock closes (`ADJUSTED_LAST`) or the selected expiring future's trades, excluding the incomplete current daily bar. Futures history is not a continuous back-adjusted series. At least 201 valid daily candles are required for indicators; stale or insufficient history cannot confirm a setup. This release does not supply US options chains, live futures depth ladders, full-market coverage or company fundamentals.
 
 The futures risk calculator uses `abs(entry-stop) × multiplier` per contract and checks tick alignment. For MES, a five-point stop at multiplier 5 is $25 per contract; a $100 risk budget estimates four contracts. This does not verify margin/buying power, include fees or guarantee fills/loss limits. Actual margin and permissions must be checked at the broker. IBKR orders cannot be enabled through this research release.
+
+
+## Without live-data subscriptions
+
+After confirming socket login, request IBKR delayed data where available (not simulated prices):
+
+```bash
+python3 scripts/configure-us.py --domain YOUR_HOSTNAME --mode ibkr --data-type delayed
+bash scripts/start-us.sh --desktop
+```
+
+Use the short restart helper with `--desktop` when phone desktop access is configured. Otherwise omit `--desktop`. The setting is saved as `IBKR_DATA_TYPE=delayed` and preserved by later configuration runs unless explicitly changed. The default for new configurations remains `live`; `delayed_frozen` is also supported for requesting the most recent delayed frozen data when offered. Generic futures open-interest ticks are not requested in delayed modes because delayed feeds support a limited generic tick set.
+
+Actual returned broker data type controls each label, not the requested setting. Delayed/frozen prices never count as live readiness. No synthetic fallback occurs. Availability and delay vary by exchange, instrument and account; this setting does not bypass entitlements, guarantee historical-data access, or enable trading. No broker subscriptions or charges are initiated. Error 10197 is specifically a competing trading/market-data session; 10089/354 concern permissions/subscriptions.

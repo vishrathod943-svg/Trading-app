@@ -13,6 +13,7 @@ services:
       FO_LIVE_ORDERS: "false"
       IBKR_HOST: "127.0.0.1"
       IBKR_PORT: ${IBKR_PORT:-4002}
+      IBKR_DATA_TYPE: ${IBKR_DATA_TYPE:-live}
       IBKR_CLIENT_ID: ${IBKR_CLIENT_ID:-71}
       IBKR_WATCHLIST_FILE: /etc/compass/us-watchlist.json
     volumes:

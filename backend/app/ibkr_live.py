@@ -12,6 +12,7 @@ from ib_async import IB, Stock, Future, StartupFetch
 from .analysis import Candle
 from .us_market import load_watchlist, select_future, build_analysis
 
+REQUEST_TYPES={'live':1,'delayed':3,'delayed_frozen':4}
 DATA_TYPES={1:'live',2:'frozen',3:'delayed',4:'delayed_frozen'}
 
 class ResearchOnly:
@@ -24,6 +25,8 @@ class IBKRLive:
         self.specs=load_watchlist(os.getenv('IBKR_WATCHLIST_FILE'))
         self.host=os.getenv('IBKR_HOST','127.0.0.1');self.port=int(os.getenv('IBKR_PORT','4002'))
         self.client_id=int(os.getenv('IBKR_CLIENT_ID','71'))
+        self.requested_data_type=os.getenv('IBKR_DATA_TYPE','live')
+        if self.requested_data_type not in REQUEST_TYPES:raise ValueError('IBKR_DATA_TYPE must be live, delayed or delayed_frozen')
         if self.client_id<=0:raise ValueError('IBKR_CLIENT_ID must be positive; client 0 is not permitted')
         if not 1<=self.port<=65535:raise ValueError('Invalid IBKR port')
         self.results={};self.contracts={};self.tickers={};self.quotes={};self.by_id={}
@@ -49,7 +52,9 @@ class IBKRLive:
         if code in (2104,2106,2107,2108,2158):return
         if code==1100:self.on_disconnect();return
         cid=getattr(contract,'conId',None)
-        if code in (354,10167,10168,10089,10090,10197):
+        if code==10197:
+            reason='Competing IBKR trading session: end other live/paper market-data sessions using this username'
+        elif code in (354,10167,10168,10089,10090):
             reason='Live market-data entitlement unavailable or session restricted; check broker subscriptions before paying'
         elif code in (162,165,166):reason='Historical data unavailable, pacing limited, or instrument expired'
         elif code==200:reason='Contract could not be qualified'
@@ -93,7 +98,7 @@ class IBKRLive:
     def status(self):
         quotes=self.quote_view();types={t:sum(q['data_type']==t for q in quotes.values()) for t in DATA_TYPES.values()}
         return dict(mode='ibkr',market='US',currency='USD',authenticated=self.connected,feed_connected=self.connected,
-            ready=self.ready(),read_only=True,orders_enabled=False,universe_count=len(self.specs),analysed_count=sum(bool(x['indicators']) for x in self.results.values()),
+            ready=self.ready(),requested_data_type=self.requested_data_type,read_only=True,orders_enabled=False,universe_count=len(self.specs),analysed_count=sum(bool(x['indicators']) for x in self.results.values()),
             qualified_count=len(self.contracts),scan_complete=self.complete,scan_errors=self.scan_errors,
             tick_age_ms=round((time.monotonic()-self.last_tick)*1000) if self.last_tick else None,
             data_types=types,error=self.error,request_errors=list(self.errors.values())[-10:],
@@ -129,7 +134,7 @@ class IBKRLive:
                 self.by_id[int(contract.conId)]=spec.exchange+':'+spec.symbol
                 self.results[spec.symbol]=build_analysis(spec.symbol,meta,[],self.rules)
                 if not old or old.conId!=contract.conId:
-                    self.tickers[spec.symbol]=self.ib.reqMktData(contract,genericTickList='588' if spec.security_type=='FUT' else '',snapshot=False,regulatorySnapshot=False)
+                    self.tickers[spec.symbol]=self.ib.reqMktData(contract,genericTickList='588' if spec.security_type=='FUT' and self.requested_data_type=='live' else '',snapshot=False,regulatorySnapshot=False)
                 bars=await self.ib.reqHistoricalDataAsync(contract,endDateTime='',durationStr='2 Y',barSizeSetting='1 day',
                     whatToShow='ADJUSTED_LAST' if spec.security_type=='STK' else 'TRADES',useRTH=spec.security_type=='STK',formatDate=2,timeout=20)
                 today=datetime.now(ZoneInfo('America/New_York' if spec.security_type=='STK' else 'America/Chicago')).date()
@@ -164,7 +169,7 @@ class IBKRLive:
                         self.contracts={};self.tickers={};self.by_id={};self.quotes={}
                         await self.ib.connectAsync(self.host,self.port,clientId=self.client_id,timeout=8,readonly=True,fetchFields=StartupFetch(0))
                         self.connected=True;self.error=None;wait=2
-                        self.ib.reqMarketDataType(1) # Live requested; delayed/frozen responses stay explicitly labelled.
+                        self.ib.reqMarketDataType(REQUEST_TYPES[self.requested_data_type]) # Actual broker response type remains authoritative.
                         await self.refresh()
                     today=datetime.now(ZoneInfo('America/New_York')).date()
                     if today!=self.last_refresh:await self.refresh()

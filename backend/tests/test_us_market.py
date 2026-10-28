@@ -53,12 +53,13 @@ class FakeIB:
     async def connectAsync(self,host,port,**kwargs):self.connect_args=kwargs;self.connected=True
     def isConnected(self):return self.connected
     def disconnect(self):self.connected=False
-    def reqMarketDataType(self,value):assert value==1
+    def reqMarketDataType(self,value):self.requested_type=value
     async def reqContractDetailsAsync(self,c):
         if c.secType=='FUT':return [details(c.symbol)]
         c.conId=2;c.localSymbol=c.symbol
         return [NS(contract=c,minTick=.01,timeZoneId='US/Eastern',liquidHours='')]
     def reqMktData(self,c,**kwargs):
+        self.request_kwargs=kwargs
         t=NS(contract=c,time=datetime.now(timezone.utc),last=100,bid=99,ask=101,volume=10000,futuresOpenInterest=3000,marketDataType=3)
         self.tickers.append(t);return t
     def cancelMktData(self,c):self.cancelled.append(c.conId)
@@ -93,6 +94,7 @@ def test_read_only_lifecycle_and_contract_metadata():
                 if live.complete:break
                 await asyncio.sleep(.01)
             assert live.complete and fake.connect_args['readonly'] is True
+            assert fake.requested_type==1
             assert fake.connect_args['clientId']!=0
             assert fake.connect_args['fetchFields'].value==0
             assert live.results['MES']['contract']['multiplier']==5
@@ -157,3 +159,48 @@ def test_us_private_config_does_not_request_or_write_broker_password(tmp_path):
     module.configure(dest,'example.duckdns.org','ibkr',4002)
     assert token in dest.read_text() and 'FO_MODE=ibkr' in dest.read_text()
     with pytest.raises(ValueError):module.configure(dest,'example.duckdns.org','ibkr',4001)
+
+
+@pytest.mark.parametrize('requested,code',[('delayed',3),('delayed_frozen',4)])
+def test_requested_delayed_feed_stays_read_only(monkeypatch,requested,code):
+    monkeypatch.setenv('IBKR_DATA_TYPE',requested)
+    async def scenario():
+        fake=FakeIB();live=IBKRLive(DEFAULT_RULES,fake)
+        live.specs=[InstrumentSpec(symbol='MES',security_type='FUT',exchange='CME')]
+        live.start()
+        try:
+            for _ in range(300):
+                if live.complete:break
+                await asyncio.sleep(.01)
+            assert live.complete and fake.requested_type==code
+            assert fake.connect_args['readonly'] is True
+            assert fake.request_kwargs['genericTickList']==''
+            live.on_tickers(fake.tickers)
+            assert live.status()['requested_data_type']==requested
+            assert live.status()['data_types']['delayed']==1
+            assert not live.ready() and not live.auto.status()['live_allowed']
+        finally:await live.stop()
+    asyncio.run(scenario())
+
+
+def test_delayed_setting_preserves_tokens_and_survives_reconfigure(tmp_path):
+    import importlib.util
+    from pathlib import Path
+    path=Path(__file__).resolve().parents[2]/'scripts/configure-us.py'
+    spec=importlib.util.spec_from_file_location('configure_us_delayed',path)
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    dest=tmp_path/'private/us.env';module.configure(dest,'example.duckdns.org','ibkr')
+    token=next(l for l in dest.read_text().splitlines() if l.startswith('FO_API_TOKEN='))
+    module.configure(dest,'example.duckdns.org','ibkr',data_type='delayed')
+    assert token in dest.read_text() and 'IBKR_DATA_TYPE=delayed' in dest.read_text()
+    module.configure(dest,'example.duckdns.org','ibkr')
+    assert 'IBKR_DATA_TYPE=delayed' in dest.read_text() and 'FO_LIVE_ORDERS=false' in dest.read_text()
+    original=dest.read_text()
+    with pytest.raises(ValueError):module.configure(dest,'example.duckdns.org','ibkr',data_type='invalid')
+    assert dest.read_text()==original
+
+
+def test_competing_session_error_is_distinguished():
+    live=IBKRLive(DEFAULT_RULES,FakeIB());live.on_error(1,10197,'private-account-value')
+    assert 'Competing' in live.status()['request_errors'][0]['reason']
+    assert 'private-account-value' not in str(live.status())
