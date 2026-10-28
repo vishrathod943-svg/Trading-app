@@ -56,3 +56,8 @@ Two focused tests pass for bcrypt-only private configuration, mode 600, symlink 
 ## Selectable delayed IBKR data
 
 75 backend tests pass. New checks verify requested IBKR market-data type 3/4, actual delayed labels, false live readiness for delayed ticks, read-only socket initialization, omission of unsupported generic futures ticks in delayed mode, private-token preservation, persistent feed selection, and distinct sanitized competing-session errors. Compose configuration and browser JavaScript syntax validate. Tests use broker doubles; availability of delayed quotes on the user's account is not verified here. No subscription or broker order was initiated.
+
+
+## Details panel during streaming quotes
+
+The watchlist now preserves instrument rows/buttons across quote messages instead of recreating them every 100 ms, preventing a pressed button from disappearing before release. Details opens immediately with inline loading/error/retry states; requests have a 30-second timeout and handle non-JSON server failures. A mobile-sized Chromium regression with simulated 50 Hz ticks verified a 400 ms held click opens details, HTTP 503 HTML errors appear in the panel, retry succeeds, and a late response cannot reopen a closed panel. Browser JavaScript syntax and diff whitespace checks pass. This does not establish the cause of every hosted failure; actual user-server responses remain uninspected. No broker/data/order code changed.
