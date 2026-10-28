@@ -38,3 +38,11 @@ Callback follow-up: the focused public-callback test passes, verifying a non-ref
 Editor-free configuration helper: 3 focused tests pass for private file creation, token preservation, input rejection without file overwrite, and symlink rejection. Only synthetic test credentials were used.
 
 Daily-login mobile follow-up: focused tests cover extraction of a token from the full expected HTTPS redirect URL or raw input; reject wrong-host, duplicate/missing token, failed status, embedded credentials and fragments; and verify diagnostic messages never echo exception contents. Real broker session exchange remains unverified.
+
+
+## Intraday ICT update · 28 October 2026
+
+- 69 backend tests passed, including completed UTC bar filtering, zero-volume acceptance, cache reuse, disconnect rejection, sanitized broker-history errors, chart authentication and timeframe validation. Broker requests use test doubles; no real broker connection or order submission occurred.
+- Android assembleDebug and lintDebug passed. Version 0.3.1/code 4 adds timeframe controls and completed-bar ICT overlays.
+- Chromium at a 390 × 844 mobile viewport passed all five timeframe selections, synthetic labels and overlay toggle with no JavaScript page exceptions. Screenshot: `docs/images/intraday-mobile.png`. Actual Safari/iOS and physical Android remain untested.
+- This update is source/APK preparation, not AWS provisioning or a verified live-data deployment. Charts poll cached historical bars, not millisecond streaming candles.

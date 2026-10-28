@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .analysis import DEFAULT_RULES, indicators, direction_for, major_moves, backtest, trade_plan, position_size
 from .provider import DemoProvider, USDemoProvider, UNIVERSE, US_UNIVERSE
 from .us_market import build_analysis, futures_risk
+from .charts import BrokerCharts, TIMEFRAMES, demo_chart
 from .ict import analyse_ict
 from .engine import Engine
 from .rules import load_rules
@@ -41,7 +42,7 @@ async def lifespan(app):
     yield
     if service: await service.stop()
 
-app=FastAPI(title='F&O Compass',version='0.3.0',lifespan=lifespan,
+app=FastAPI(title='F&O Compass',version='0.3.1',lifespan=lifespan,
     description='Single-account Kite streaming and guarded option automation; demo remains available.')
 
 @app.middleware('http')
@@ -113,6 +114,20 @@ def stock(symbol:str):
             if q['price'] is not None: result.update(price=q['price'],price_source=q.get('price_source','last'))
     result['ict']=analyse_ict(result.get('candles',[]))
     return result
+chart_service=BrokerCharts()
+@app.get('/chart/{symbol}')
+async def chart(symbol:str,timeframe:str=Query('5m',pattern='^(1m|5m|15m|1h|1D)$')):
+    symbol=symbol.upper()
+    if timeframe=='1D':
+        result=stock(symbol)
+        return dict(symbol=symbol,timeframe='1D',candles=result['candles'],ict=result['ict'],source='synthetic' if MODE in ('demo','us_demo') else 'broker_daily_history',completed_only=True,warning='Completed daily bars; current quotes are separate.')
+    if MODE=='ibkr':
+        try:return await chart_service.get(service,symbol,timeframe)
+        except ValueError as e:raise HTTPException(503,str(e))
+    if MODE=='kite':raise HTTPException(409,'Intraday charts currently support IBKR and synthetic demo only')
+    result=analyse(symbol)
+    return demo_chart(symbol,timeframe,result['price'])
+
 @app.get('/alerts')
 def alerts(): return engine.alerts()
 @app.get('/trades')

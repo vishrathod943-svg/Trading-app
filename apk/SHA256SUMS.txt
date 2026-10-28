@@ -1,1 +1,1 @@
-3cc6f6d843927e91b77f4351d875d0398c693eaa8974e4dd74cee8de238b528a  apk/FO-Compass-debug.apk
+361ab50d355b51c8a2d469ae04985fa4112f84733fbbd5bc9279a499273bde13  apk/FO-Compass-debug.apk

@@ -1,5 +1,5 @@
 """Causal, explicit daily-bar ICT heuristics; never an execution signal."""
-def analyse_ict(candles):
+def analyse_ict(candles,timeframe="1D"):
     events=[]; zones=[]; swings={'high':None,'low':None}; broken=set(); trend=None
     def event(kind,i,price,direction,origin):
         events.append(dict(kind=kind,index=i,time=candles[i]['time'],price=price,direction=direction,origin_index=origin))
@@ -39,6 +39,6 @@ def analyse_ict(candles):
     if all(swings.values()):
         lo=swings['low'][1];hi=swings['high'][1]
         if hi>lo:dealing=dict(low=lo,high=hi,equilibrium=(lo+hi)/2)
-    return dict(timeframe='1D',basis='Completed daily candles only; live quotes do not form intraday bars',events=events,zones=zones,dealing_range=dealing,
+    return dict(timeframe=timeframe,basis=f'Completed {timeframe} candles only; current quotes are separate',events=events,zones=zones,dealing_range=dealing,
         rules='Unique 2-left/2-right pivots confirmed after 2 bars; close breaks = BOS/CHoCH; wick rejection = sweep; three-bar wick gaps = FVG; last opposite candle within 10 bars before break = OB candidate. Full gap traversal marks a zone filled.',
         limitations=['Heuristic research labels, not validated trade confirmations','No intraday kill zones, opening ranges, SMT divergence, breaker or mitigation-block detection','Range uses latest confirmed swing high/low; not a higher-timeframe bias'])

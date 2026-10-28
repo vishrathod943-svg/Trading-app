@@ -1,6 +1,7 @@
 package com.foscreener.app
 
 import android.os.Bundle
+import kotlinx.coroutines.ensureActive
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
@@ -140,9 +141,37 @@ class MainActivity : ComponentActivity() {
 }
 @Composable private fun Detail(s:CompassState,vm:CompassViewModel) {
     val d=s.detail ?: return
+    var timeframe by remember(d.optString("symbol")) { mutableStateOf("1D") }
+    var chart by remember(d.optString("symbol")) { mutableStateOf<JSONObject?>(null) }
+    var chartStatus by remember(d.optString("symbol")) { mutableStateOf("") }
+    LaunchedEffect(d.optString("symbol"),timeframe) {
+        chart=null
+        while(true) {
+            chartStatus="Loading $timeframe completed bars…"
+            try {
+                val data=JSONObject(vm.repository.request("/chart/${d.getString("symbol")}?timeframe=$timeframe"))
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                chart=data
+                chartStatus="${data.optString("source")} · ${data.optString("last_bar",data.optJSONArray("candles")?.objects()?.lastOrNull()?.optString("time")?:"—")} · ${data.optString("warning")} ${data.optString("warning_demo") }"
+            } catch(e:kotlinx.coroutines.CancellationException) { throw e }
+              catch(e:Exception) { chart=null;chartStatus="Chart unavailable: ${e.message}" }
+            kotlinx.coroutines.delay(30000)
+        }
+    }
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
         item { Label("${d.optString("exchange")} / ${d.optString("sector")}"); Text(d.money("price"),fontSize=38.sp,fontWeight=FontWeight.Bold); Text("${d.decimal("change_pct")}% last closed session · ${d.optString("data_as_of")}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
-        item { Card { Column(Modifier.padding(16.dp)) { Label("Daily price & volume · 80 closed sessions"); Candles(d.getJSONArray("candles").objects(),d.optJSONObject("ict")); Text("ICT: completed daily bars only. FVG / OB candidates shaded; equilibrium in gold. Not intraday signals.",fontSize=11.sp); d.optJSONObject("ict")?.optJSONArray("events")?.objects()?.takeLast(5)?.forEach { Text("${it.optString("time")} · ${it.optString("kind")} · ${it.optString("direction")}",fontSize=11.sp) } } } }
+        item { Row(horizontalArrangement=Arrangement.spacedBy(5.dp)) { listOf("1m","5m","15m","1h","1D").forEach { tf -> FilterChip(selected=timeframe==tf,onClick={timeframe=tf},label={Text(tf,fontSize=11.sp)}) } } }
+        item { Card { Column(Modifier.padding(16.dp)) {
+            Label("$timeframe · completed candles & ICT")
+            Text(chartStatus,fontSize=11.sp)
+            val cd=chart
+            if(cd!=null) {
+                Candles(cd.getJSONArray("candles").objects(),cd.optJSONObject("ict"))
+                Text("FVG / OB candidates shaded; equilibrium in gold. Daily setup scores are separate. Research labels only.",fontSize=11.sp)
+                cd.optJSONObject("ict")?.optJSONArray("events")?.objects()?.takeLast(5)?.forEach { Text("${it.optString("time")} · ${it.optString("kind")} · ${it.optString("direction")}",fontSize=11.sp) }
+            }
+        } } }
+
         item { Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { Metric("Setup score", "${d.optInt("score")}",Modifier.weight(1f)); Metric("Volume ratio","${d.decimal("volume_ratio")}×",Modifier.weight(1f)) } }
         item { Text(if(d.optBoolean("confirmed")) "Confirmed ${d.optString("direction")} setup" else "Watchlist · no confirmed trade",fontSize=20.sp,fontWeight=FontWeight.Bold) }
         val indicators=d.getJSONObject("indicators")
@@ -170,7 +199,7 @@ class MainActivity : ComponentActivity() {
             drawRect((if(z.optString("direction")=="bullish") Color(0xFF83C963) else Rose).copy(alpha=.16f),Offset(left,y(z.getDouble("high"))),androidx.compose.ui.geometry.Size((size.width-left).coerceAtLeast(0f),(y(z.getDouble("low"))-y(z.getDouble("high"))).coerceAtLeast(0f)))
         }
         ict?.optJSONObject("dealing_range")?.let { r -> drawLine(Color(0xFFDDB966),Offset(0f,y(r.getDouble("equilibrium"))),Offset(size.width,y(r.getDouble("equilibrium"))),1f) }
-        val maxV=candles.maxOf { it.getDouble("volume") }
+        val maxV=candles.maxOf { it.getDouble("volume") }.coerceAtLeast(1.0)
         repeat(4) { n -> val gy=priceHeight*n/3; drawLine(Color.Gray.copy(alpha=.15f),Offset(0f,gy),Offset(size.width,gy)) }
         candles.forEachIndexed { n,c ->
             val x=(n+.5f)*step; val color=if(c.getDouble("close")>=c.getDouble("open")) Color(0xFF83C963) else Rose
